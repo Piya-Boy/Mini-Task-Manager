@@ -1,0 +1,184 @@
+<script>
+const TaskModal = (() => {
+  const dialog = document.getElementById('task-modal');
+  const form = document.getElementById('task-form');
+  const heading = document.getElementById('task-modal-title');
+  const titleInput = document.getElementById('task-title');
+  const titleError = document.getElementById('task-title-error');
+  const descriptionInput = document.getElementById('task-description');
+  const statusSelect = document.getElementById('task-status');
+  const prioritySelect = document.getElementById('task-priority');
+  const formError = document.getElementById('task-form-error');
+  const submitBtn = document.getElementById('task-submit');
+  const cancelBtn = document.getElementById('task-cancel');
+  const closeBtn = document.getElementById('task-close');
+  const deleteBtn = document.getElementById('task-delete');
+  const controls = [titleInput, descriptionInput, statusSelect, prioritySelect, cancelBtn, closeBtn, deleteBtn, submitBtn];
+
+  let mode = 'create';
+  let taskId = null;
+  let requestId = null;
+  let baseVersion = null;
+  let busy = false;
+
+  function submitLabel() {
+    return mode === 'edit' ? 'บันทึก' : 'สร้างงาน';
+  }
+
+  function updateChrome() {
+    heading.textContent = mode === 'edit' ? 'แก้ไขงาน' : 'งานใหม่';
+    deleteBtn.hidden = mode !== 'edit';
+    if (!busy) submitBtn.textContent = submitLabel();
+  }
+
+  function setBusy(value, label) {
+    busy = value;
+    controls.forEach((el) => { el.disabled = value; });
+    submitBtn.setAttribute('aria-busy', String(value));
+    submitBtn.textContent = value ? label : submitLabel();
+    ImageInput.setDisabled(value);
+  }
+
+  function showTitleError(show) {
+    titleError.hidden = !show;
+    titleInput.setAttribute('aria-invalid', String(show));
+  }
+
+  function showFormError(message) {
+    formError.textContent = message || '';
+    formError.hidden = !message;
+  }
+
+  function open(task) {
+    mode = task ? 'edit' : 'create';
+    taskId = task ? task.task_id : null;
+    requestId = task ? null : Utils.uuid();
+    baseVersion = task ? task.updated_at : null;
+    titleInput.value = task ? task.title : '';
+    descriptionInput.value = task ? task.description : '';
+    statusSelect.value = task ? task.status : 'todo';
+    prioritySelect.value = task ? task.priority : '';
+    showTitleError(false);
+    showFormError('');
+    ImageInput.reset(task ? task.images : []);
+    setBusy(false);
+    updateChrome();
+    dialog.showModal();
+    titleInput.focus();
+  }
+
+  function readFields() {
+    return {
+      title: titleInput.value.trim(),
+      description: descriptionInput.value,
+      status: statusSelect.value,
+      priority: prioritySelect.value,
+    };
+  }
+
+  function attachImageInStore(id, image) {
+    const task = Store.findTask(id);
+    if (task) Store.upsertTasks([Object.assign({}, task, { images: task.images.concat([image]) })]);
+  }
+
+  async function uploadPending(id) {
+    const items = ImageInput.getPending();
+    const failures = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      setBusy(true, 'กำลังอัปโหลด ' + (i + 1) + '/' + items.length + '…');
+      try {
+        const data = await Utils.readFileAsBase64(item.file);
+        const result = await Api.uploadImage(id, { name: item.name, mimeType: item.file.type, data });
+        ImageInput.markUploaded(item.id, result.image);
+        attachImageInStore(id, result.image);
+      } catch (error) {
+        const ownMessage = error.code === 'VALIDATION' || error.code === 'LIMIT';
+        failures.push(ownMessage ? error.message : item.name + ' — ' + error.message);
+      }
+    }
+    return failures;
+  }
+
+  async function save() {
+    if (busy) return;
+    const fields = readFields();
+    if (!fields.title) {
+      showTitleError(true);
+      titleInput.focus();
+      return;
+    }
+    showTitleError(false);
+    showFormError('');
+    setBusy(true, 'กำลังบันทึก…');
+
+    try {
+      let task;
+      if (mode === 'create') {
+        task = (await Api.createTask(fields, requestId)).task;
+      } else {
+        // The version this modal was opened with, so a refresh after CONFLICT cannot hide the other edit.
+        task = (await Api.updateTask(taskId, fields, baseVersion, ImageInput.getRemovedIds())).task;
+        ImageInput.commitRemovals();
+      }
+      mode = 'edit';
+      taskId = task.task_id;
+      baseVersion = task.updated_at;
+      Store.upsertTasks([task]);
+      updateChrome();
+
+      const failures = await uploadPending(task.task_id);
+      setBusy(false);
+      if (failures.length) {
+        ImageInput.setErrors(failures);
+        showFormError('บันทึกงานแล้ว แต่อัปโหลดรูปบางรูปไม่สำเร็จ กด “บันทึก” เพื่อลองอัปโหลดรูปที่เหลืออีกครั้ง');
+        return;
+      }
+      dialog.close();
+      Toast.show('บันทึกงานแล้ว');
+    } catch (error) {
+      setBusy(false);
+      showFormError(error.message);
+      if (error.code === 'CONFLICT' || error.code === 'NOT_FOUND') App.refresh({ force: true });
+    }
+  }
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    save();
+  });
+  titleInput.addEventListener('input', () => {
+    if (titleInput.value.trim()) showTitleError(false);
+  });
+  cancelBtn.addEventListener('click', () => dialog.close());
+  closeBtn.addEventListener('click', () => dialog.close());
+  deleteBtn.addEventListener('click', () => {
+    const task = Store.findTask(taskId);
+    dialog.close();
+    if (task) App.confirmDelete(task);
+  });
+  dialog.addEventListener('cancel', (event) => {
+    if (busy) event.preventDefault();
+  });
+  dialog.addEventListener('close', () => {
+    ImageInput.clear();
+    App.refresh();
+  });
+
+  document.addEventListener('paste', (event) => {
+    if (!dialog.open || busy || !event.clipboardData) return;
+    const files = Array.from(event.clipboardData.items || [])
+      .filter((item) => item.kind === 'file')
+      .map((item) => item.getAsFile())
+      .filter(Boolean);
+    if (!files.length) return;
+    event.preventDefault();
+    ImageInput.addFiles(files);
+  });
+
+  return {
+    open,
+    isOpen: () => dialog.open,
+  };
+})();
+</script>

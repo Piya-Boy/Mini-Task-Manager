@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+Thai:wght@400;500;600&display=swap">
+  <?!= include_('client/styles/main') ?>
+</head>
+<body>
+  <?!= include_('client/Main') ?>
+  <?!= include_('client/components/TaskModal') ?>
+  <?!= include_('client/components/ConfirmDialog') ?>
+  <?!= include_('client/components/Lightbox') ?>
+  <div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
+
+  <script>window.__INITIAL_DATA__ = <?!= initialData ?>;</script>
+  <?!= include_('client/scripts/utils') ?>
+  <?!= include_('client/scripts/api') ?>
+  <?!= include_('client/scripts/store') ?>
+  <?!= include_('client/scripts/toast') ?>
+  <?!= include_('client/scripts/image-source') ?>
+  <?!= include_('client/scripts/lightbox') ?>
+  <?!= include_('client/scripts/confirm-dialog') ?>
+  <?!= include_('client/scripts/image-input') ?>
+  <?!= include_('client/scripts/task-modal') ?>
+  <?!= include_('client/scripts/list-view') ?>
+  <?!= include_('client/scripts/board-view') ?>
+  <?!= include_('client/scripts/app') ?>
+</body>
+</html>

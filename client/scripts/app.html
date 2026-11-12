@@ -1,0 +1,174 @@
+<script>
+const App = (() => {
+  const REFRESH_INTERVAL_MS = 45000;
+  const els = {
+    search: document.getElementById('search-input'),
+    viewButtons: document.querySelectorAll('.view-btn'),
+    newTask: document.getElementById('new-task-btn'),
+    emptyNew: document.getElementById('empty-new-btn'),
+    matchLabel: document.getElementById('match-label'),
+    loading: document.getElementById('loading-state'),
+    error: document.getElementById('error-state'),
+    errorMessage: document.getElementById('error-state-message'),
+    retry: document.getElementById('retry-btn'),
+    emptyTasks: document.getElementById('empty-tasks'),
+    emptyResults: document.getElementById('empty-results'),
+    emptyResultsMessage: document.getElementById('empty-results-message'),
+    clearSearch: document.getElementById('clear-search-btn'),
+    listView: document.getElementById('list-view'),
+    boardView: document.getElementById('board-view'),
+  };
+
+  let refreshing = false;
+  let pendingMoves = 0;
+
+  const handlers = {
+    onEdit: (task) => TaskModal.open(Store.findTask(task.task_id) || task),
+    onDelete: (task) => confirmDelete(task),
+    onStatusChange: (task, status) => moveTask(task.task_id, status, null),
+    onMove: (taskId, status, beforeId) => moveTask(taskId, status, beforeId),
+    onOpenGallery: (task) => Lightbox.open(task.images.map((image) => ({ name: image.file_name, image })), 0),
+    onSelectColumn: (status) => Store.setBoardColumn(status),
+  };
+
+  function localPosition(task, status, beforeId) {
+    const column = Store.get().tasks.filter((t) => t.status === status && t.task_id !== task.task_id);
+    const found = beforeId ? column.findIndex((t) => t.task_id === beforeId) : -1;
+    const index = found === -1 ? column.length : found;
+    const prev = column[index - 1];
+    const next = column[index];
+    if (!prev && !next) return task.position;
+    if (!prev) return next.position - 1024;
+    if (!next) return prev.position + 1024;
+    return (prev.position + next.position) / 2;
+  }
+
+  async function moveTask(taskId, status, beforeId) {
+    const task = Store.findTask(taskId);
+    if (!task) return;
+    Store.upsertTasks([Object.assign({}, task, { status, position: localPosition(task, status, beforeId) })]);
+    pendingMoves += 1;
+    try {
+      const result = await Api.moveTask(taskId, status, beforeId);
+      Store.upsertTasks(result.tasks);
+    } catch (error) {
+      Toast.error(error.message);
+      refresh({ force: true });
+    } finally {
+      pendingMoves -= 1;
+    }
+  }
+
+  function confirmDelete(task) {
+    const n = task.images.length;
+    ConfirmDialog.open({
+      title: 'ลบ “' + task.title + '” ใช่ไหม?',
+      message: n
+        ? 'งานนี้และรูป ' + n + ' รูปจะถูกลบสำหรับทั้งสองคน และกู้คืนจากแอปไม่ได้'
+        : 'งานนี้จะถูกลบสำหรับทั้งสองคน และกู้คืนจากแอปไม่ได้',
+      confirmLabel: 'ลบงาน',
+      busyLabel: 'กำลังลบ…',
+      onConfirm: async () => {
+        try {
+          await Api.deleteTask(task.task_id);
+        } catch (error) {
+          if (error.code !== 'NOT_FOUND') throw error;
+        }
+        Store.removeTask(task.task_id);
+        Toast.show('ลบงานแล้ว');
+      },
+    });
+  }
+
+  async function refresh({ force = false } = {}) {
+    if (refreshing) return;
+    if (!force && (TaskModal.isOpen() || BoardView.isDragging() || pendingMoves > 0)) return;
+    refreshing = true;
+    try {
+      const data = await Api.listTasks();
+      if (pendingMoves === 0 || force) Store.setTasks(data.tasks);
+    } catch (error) {
+      if (Store.get().status !== 'ready') Store.setLoadError(error.message);
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  function render(state) {
+    const ready = state.status === 'ready';
+    const filtered = ready ? Store.filteredTasks() : [];
+    const query = state.query.trim();
+    const noTasks = ready && state.tasks.length === 0;
+    const noResults = ready && !noTasks && filtered.length === 0;
+    const showContent = ready && filtered.length > 0;
+
+    els.loading.hidden = state.status !== 'loading';
+    els.error.hidden = state.status !== 'error';
+    els.errorMessage.textContent = state.error || 'โหลดข้อมูลไม่สำเร็จ';
+    els.emptyTasks.hidden = !noTasks;
+    els.emptyResults.hidden = !noResults;
+    els.emptyResultsMessage.textContent = 'ไม่พบงานที่ตรงกับ “' + query + '”';
+    els.matchLabel.hidden = !(showContent && query);
+    els.matchLabel.textContent = 'พบ ' + filtered.length + ' จาก ' + state.tasks.length + ' งาน';
+    els.viewButtons.forEach((btn) => btn.setAttribute('aria-pressed', String(btn.dataset.view === state.view)));
+
+    const activeId = document.activeElement && document.activeElement.id;
+    els.listView.hidden = !(showContent && state.view === 'list');
+    els.boardView.hidden = !(showContent && state.view === 'board');
+    if (!els.listView.hidden) ListView.render(els.listView, filtered, handlers);
+    else els.listView.replaceChildren();
+    if (!els.boardView.hidden) BoardView.render(els.boardView, filtered, state.boardColumn, handlers);
+    else els.boardView.replaceChildren();
+
+    if (activeId) {
+      const again = document.getElementById(activeId);
+      if (again && again !== document.activeElement && (els.listView.contains(again) || els.boardView.contains(again))) {
+        again.focus();
+      }
+    }
+  }
+
+  function isFileDrag(event) {
+    return event.dataTransfer && Array.from(event.dataTransfer.types || []).indexOf('Files') !== -1;
+  }
+
+  function init() {
+    Store.subscribe(render);
+
+    els.search.addEventListener('input', Utils.debounce(() => Store.setQuery(els.search.value), 120));
+    els.viewButtons.forEach((btn) => btn.addEventListener('click', () => Store.setView(btn.dataset.view)));
+    els.newTask.addEventListener('click', () => TaskModal.open(null));
+    els.emptyNew.addEventListener('click', () => TaskModal.open(null));
+    els.clearSearch.addEventListener('click', () => {
+      els.search.value = '';
+      Store.setQuery('');
+      els.search.focus();
+    });
+    els.retry.addEventListener('click', () => {
+      Store.setLoading();
+      refresh({ force: true });
+    });
+
+    // Stops the browser from navigating away when a file is dropped outside the drop zone.
+    window.addEventListener('dragover', (event) => { if (isFileDrag(event)) event.preventDefault(); });
+    window.addEventListener('drop', (event) => { if (isFileDrag(event)) event.preventDefault(); });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') refresh();
+    });
+    setInterval(() => {
+      if (document.visibilityState === 'visible') refresh();
+    }, REFRESH_INTERVAL_MS);
+
+    const initial = window.__INITIAL_DATA__;
+    if (initial && Array.isArray(initial.tasks)) Store.setTasks(initial.tasks);
+    else {
+      render(Store.get());
+      refresh({ force: true });
+    }
+  }
+
+  init();
+  return { refresh, confirmDelete };
+})();
+</script>

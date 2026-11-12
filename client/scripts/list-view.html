@@ -1,0 +1,65 @@
+<script>
+const ListView = (() => {
+  const { h, icon, priorityIcon, statusSelect, STATUS_LABELS, PRIORITY_LABELS } = Utils;
+
+  function priority(task) {
+    if (!task.priority) return null;
+    return h('span', { class: 'prio' }, priorityIcon(task.priority), PRIORITY_LABELS[task.priority]);
+  }
+
+  function imagesButton(task, onOpenGallery) {
+    const n = task.images.length;
+    if (!n) return null;
+    return h('button', {
+      type: 'button',
+      class: 'images-btn',
+      'aria-label': 'ดูรูป ' + n + ' รูปของ ' + task.title,
+      onClick: () => onOpenGallery(task),
+    }, icon('image'), String(n));
+  }
+
+  function firstLine(text) {
+    return text.split('\n')[0];
+  }
+
+  function row(task, handlers) {
+    return h('li', { class: task.status === 'done' ? 'row is-done' : 'row', dataset: { id: task.task_id } },
+      h('span', { class: 'col-status', title: STATUS_LABELS[task.status] }, icon(task.status)),
+      h('div', { class: 'col-main' },
+        h('button', { type: 'button', class: 'row-title', onClick: () => handlers.onEdit(task) }, task.title),
+        task.description ? h('div', { class: 'row-desc' }, firstLine(task.description)) : null,
+        h('div', { class: 'row-meta' }, priority(task), imagesButton(task, handlers.onOpenGallery))),
+      h('span', { class: 'col-prio' }, priority(task)),
+      h('span', { class: 'col-images' }, imagesButton(task, handlers.onOpenGallery)),
+      h('span', { class: 'col-select' }, statusSelect(task, {
+        id: 'status-' + task.task_id,
+        label: 'สถานะของ ' + task.title,
+        onChange: (event) => handlers.onStatusChange(task, event.target.value),
+      })),
+      h('span', { class: 'col-actions' },
+        h('button', {
+          type: 'button', class: 'btn btn-icon', id: 'edit-' + task.task_id,
+          'aria-label': 'แก้ไข ' + task.title, onClick: () => handlers.onEdit(task),
+        }, icon('pencil')),
+        h('button', {
+          type: 'button', class: 'btn btn-icon', id: 'delete-' + task.task_id,
+          'aria-label': 'ลบ ' + task.title, onClick: () => handlers.onDelete(task),
+        }, icon('trash'))));
+  }
+
+  function render(container, tasks, handlers) {
+    const head = h('div', { class: 'list-head', 'aria-hidden': 'true' },
+      h('span', { class: 'col-status' }),
+      h('span', { class: 'col-main' }, 'ชื่องาน'),
+      h('span', { class: 'col-prio' }, 'ความสำคัญ'),
+      h('span', { class: 'col-images' }, 'รูป'),
+      h('span', { class: 'col-select' }, 'สถานะ'),
+      h('span', { class: 'col-actions' }));
+    container.replaceChildren(h('div', { class: 'list' },
+      head,
+      h('ul', { class: 'list-rows' }, tasks.map((task) => row(task, handlers)))));
+  }
+
+  return { render };
+})();
+</script>

@@ -1,0 +1,14 @@
+{
+  "scriptId": "PASTE_YOUR_SCRIPT_ID",
+  "rootDir": ".",
+  "filePushOrder": [
+    "server/Config.gs",
+    "server/Utils.gs",
+    "server/Validation.gs",
+    "server/Database.gs",
+    "server/ImageService.gs",
+    "server/TaskService.gs",
+    "server/Code.gs",
+    "server/HttpApi.gs"
+  ]
+}

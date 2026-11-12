@@ -1,0 +1,70 @@
+<script>
+class ApiError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+
+const Api = (() => {
+  const NETWORK_MESSAGE = 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่';
+  // Set by tools/build-static.js when the page is hosted outside Apps Script.
+  const API_URL = window.__API_URL__ || '';
+
+  function unwrap(res) {
+    if (res && res.ok) return res.data;
+    throw new ApiError(res && res.error ? res.error.code : 'INTERNAL',
+      res && res.error ? res.error.message : NETWORK_MESSAGE);
+  }
+
+  function viaScriptRun(name, args) {
+    return new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler((res) => {
+          try { resolve(unwrap(res)); } catch (error) { reject(error); }
+        })
+        .withFailureHandler(() => reject(new ApiError('NETWORK', NETWORK_MESSAGE)))
+        [name](...args);
+    });
+  }
+
+  // text/plain keeps this a simple CORS request (no preflight, which Apps Script
+  // cannot answer). credentials: 'omit' keeps Google cookies out, which avoids
+  // the multi-account /u/N/ redirect.
+  async function viaFetch(name, args) {
+    let res;
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ fn: name, args }),
+        credentials: 'omit',
+        redirect: 'follow',
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      res = await response.json();
+    } catch (error) {
+      throw new ApiError('NETWORK', NETWORK_MESSAGE);
+    }
+    return unwrap(res);
+  }
+
+  function call(name, ...args) {
+    if (window.google && google.script && google.script.run) return viaScriptRun(name, args);
+    if (API_URL) return viaFetch(name, args);
+    return Promise.reject(new ApiError('NETWORK', NETWORK_MESSAGE));
+  }
+
+  return {
+    listTasks: () => call('apiListTasks'),
+    createTask: (input, requestId) => call('apiCreateTask', input, requestId),
+    updateTask: (taskId, input, expectedUpdatedAt, removeImageIds) =>
+      call('apiUpdateTask', taskId, input, expectedUpdatedAt, removeImageIds),
+    moveTask: (taskId, status, beforeTaskId) => call('apiMoveTask', taskId, status, beforeTaskId || null),
+    deleteTask: (taskId) => call('apiDeleteTask', taskId),
+    uploadImage: (taskId, file) => call('apiUploadImage', taskId, file),
+    getImageData: (imageId, variant) => call('apiGetImageData', imageId, variant),
+  };
+})();
+</script>

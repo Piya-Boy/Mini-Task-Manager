@@ -1,0 +1,201 @@
+<script>
+/** Attachment field of the task modal: existing Drive images plus local files waiting for upload. */
+const ImageInput = (() => {
+  const zone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+  const grid = document.getElementById('image-grid');
+  const errorList = document.getElementById('image-errors');
+  const countEl = document.getElementById('attach-count');
+  const { h, icon, formatSize, IMAGE_LIMITS } = Utils;
+  const EXTENSIONS = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+  let existing = [];
+  let pending = [];
+  let missing = new Set();
+  let disabled = false;
+  let pasteCounter = 0;
+
+  function visible() {
+    return existing.filter((e) => !e.removed);
+  }
+
+  function count() {
+    return visible().length + pending.length;
+  }
+
+  function revokeAll() {
+    pending.forEach((p) => URL.revokeObjectURL(p.url));
+  }
+
+  function reset(images) {
+    revokeAll();
+    existing = (images || []).map((image) => ({ image, removed: false }));
+    pending = [];
+    missing = new Set();
+    setErrors([]);
+    render();
+  }
+
+  function fileName(file) {
+    if (file.name && file.name !== 'image.png') return file.name;
+    pasteCounter += 1;
+    return 'pasted-' + pasteCounter + '.' + (EXTENSIONS[file.type] || 'png');
+  }
+
+  function addFiles(fileList) {
+    if (disabled) return;
+    const errors = [];
+    let total = count();
+    Array.from(fileList || []).forEach((file) => {
+      const name = fileName(file);
+      if (IMAGE_LIMITS.types.indexOf(file.type) === -1) {
+        errors.push(name + ' — ไม่ใช่ไฟล์ JPG, PNG หรือ WebP');
+      } else if (file.size > IMAGE_LIMITS.maxBytes) {
+        errors.push(name + ' — ขนาด ' + formatSize(file.size) + ' เกิน 8 MB');
+      } else if (total >= IMAGE_LIMITS.maxCount) {
+        errors.push(name + ' — งานนี้มีรูปครบ ' + IMAGE_LIMITS.maxCount + ' รูปแล้ว');
+      } else {
+        total += 1;
+        pending.push({ id: Utils.uuid(), file, name, url: URL.createObjectURL(file) });
+      }
+    });
+    setErrors(errors);
+    render();
+  }
+
+  function setErrors(messages) {
+    errorList.replaceChildren(...messages.map((m) => h('li', {}, m)));
+    errorList.hidden = messages.length === 0;
+  }
+
+  function gallery() {
+    return visible().map((e) => ({ name: e.image.file_name, image: e.image }))
+      .concat(pending.map((p) => ({ name: p.name, url: p.url })));
+  }
+
+  function tile({ key, name, caption, isMissing, buildImage, onRemove, galleryIndex }) {
+    const box = h('button', {
+      type: 'button',
+      class: isMissing ? 'tile-box is-missing' : 'tile-box',
+      'aria-label': 'ดู ' + name,
+      disabled: isMissing || null,
+      onClick: () => Lightbox.open(gallery(), galleryIndex),
+    }, isMissing ? 'ไม่พบรูป' : icon('imageLg'));
+    if (!isMissing) buildImage(box);
+
+    return h('li', { class: 'tile', dataset: { key } },
+      box,
+      h('button', {
+        type: 'button', class: 'tile-remove', 'aria-label': 'นำ ' + name + ' ออก',
+        disabled: disabled || null, onClick: onRemove,
+      }, icon('close')),
+      h('span', { class: 'tile-name', title: name }, name),
+      h('span', { class: 'tile-caption' }, caption));
+  }
+
+  function render() {
+    const total = count();
+    countEl.textContent = total + ' / ' + IMAGE_LIMITS.maxCount;
+    fileInput.disabled = disabled || total >= IMAGE_LIMITS.maxCount;
+
+    const tiles = [];
+    visible().forEach((entry, i) => {
+      const image = entry.image;
+      const isMissing = missing.has(image.image_id);
+      tiles.push(tile({
+        key: image.image_id,
+        name: image.file_name,
+        caption: isMissing ? 'ไม่พบใน Drive' : 'อัปโหลดแล้ว',
+        isMissing,
+        galleryIndex: i,
+        buildImage: (box) => {
+          const img = h('img', { alt: '' });
+          img.addEventListener('load', () => box.replaceChildren(img), { once: true });
+          ImageSource.load(img, image, 'thumb', (reason) => {
+            if (reason === 'missing') {
+              missing.add(image.image_id);
+              render();
+            }
+          });
+        },
+        onRemove: () => {
+          entry.removed = true;
+          render();
+        },
+      }));
+    });
+    const offset = visible().length;
+    pending.forEach((item, i) => {
+      tiles.push(tile({
+        key: item.id,
+        name: item.name,
+        caption: 'ยังไม่อัปโหลด · ' + formatSize(item.file.size),
+        isMissing: false,
+        galleryIndex: offset + i,
+        buildImage: (box) => box.replaceChildren(h('img', { src: item.url, alt: '' })),
+        onRemove: () => {
+          URL.revokeObjectURL(item.url);
+          pending = pending.filter((p) => p !== item);
+          render();
+        },
+      }));
+    });
+    grid.replaceChildren(...tiles);
+    grid.hidden = tiles.length === 0;
+  }
+
+  function setDisabled(value) {
+    disabled = value;
+    render();
+  }
+
+  function markUploaded(pendingId, image) {
+    const item = pending.find((p) => p.id === pendingId);
+    if (!item) return;
+    URL.revokeObjectURL(item.url);
+    pending = pending.filter((p) => p !== item);
+    existing.push({ image, removed: false });
+    render();
+  }
+
+  function commitRemovals() {
+    existing = existing.filter((e) => !e.removed);
+  }
+
+  function isDraggingFiles(event) {
+    return event.dataTransfer && Array.from(event.dataTransfer.types || []).indexOf('Files') !== -1;
+  }
+
+  zone.addEventListener('dragover', (event) => {
+    if (!isDraggingFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = disabled ? 'none' : 'copy';
+    zone.classList.add('is-active');
+  });
+  zone.addEventListener('dragleave', (event) => {
+    if (!zone.contains(event.relatedTarget)) zone.classList.remove('is-active');
+  });
+  zone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    zone.classList.remove('is-active');
+    addFiles(event.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', () => {
+    addFiles(fileInput.files);
+    fileInput.value = '';
+  });
+
+  return {
+    reset,
+    addFiles,
+    setErrors,
+    setDisabled,
+    markUploaded,
+    commitRemovals,
+    clear: () => reset([]),
+    getPending: () => pending.slice(),
+    getRemovedIds: () => existing.filter((e) => e.removed).map((e) => e.image.image_id),
+    hasChanges: () => pending.length > 0 || existing.some((e) => e.removed),
+  };
+})();
+</script>

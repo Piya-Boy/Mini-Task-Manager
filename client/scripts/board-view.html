@@ -1,0 +1,131 @@
+<script>
+const BoardView = (() => {
+  const { h, icon, priorityIcon, statusSelect, STATUS_LABELS, STATUS_ORDER, PRIORITY_LABELS } = Utils;
+  const slot = h('div', { class: 'drop-slot', 'aria-hidden': 'true' });
+  let dragId = null;
+
+  function clearIndicators() {
+    slot.remove();
+    document.querySelectorAll('.column.is-over').forEach((el) => el.classList.remove('is-over'));
+  }
+
+  function cardBefore(list, clientY) {
+    const cards = list.querySelectorAll('.card:not(.is-dragging)');
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) return card;
+    }
+    return null;
+  }
+
+  function card(task, handlers) {
+    const n = task.images.length;
+    const el = h('article', {
+      class: task.status === 'done' ? 'card is-done' : 'card',
+      draggable: 'true',
+      dataset: { id: task.task_id },
+    },
+      h('button', { type: 'button', class: 'card-title', onClick: () => handlers.onEdit(task) }, task.title),
+      task.description ? h('p', { class: 'card-desc' }, task.description) : null,
+      h('div', { class: 'card-meta' },
+        task.priority
+          ? h('span', { class: 'prio', title: 'ความสำคัญ: ' + PRIORITY_LABELS[task.priority] },
+            priorityIcon(task.priority), PRIORITY_LABELS[task.priority])
+          : null,
+        n ? h('button', {
+          type: 'button', class: 'images-btn',
+          'aria-label': 'ดูรูป ' + n + ' รูปของ ' + task.title,
+          onClick: () => handlers.onOpenGallery(task),
+        }, icon('image'), String(n)) : null,
+        h('span', { class: 'spacer' }),
+        statusSelect(task, {
+          id: 'move-' + task.task_id,
+          small: true,
+          label: 'ย้าย ' + task.title + ' ไปที่',
+          onChange: (event) => handlers.onStatusChange(task, event.target.value),
+        })));
+
+    el.addEventListener('dragstart', (event) => {
+      if (event.target !== el) return;
+      dragId = task.task_id;
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', task.task_id);
+      requestAnimationFrame(() => el.classList.add('is-dragging'));
+    });
+    el.addEventListener('dragend', () => {
+      dragId = null;
+      el.classList.remove('is-dragging');
+      clearIndicators();
+    });
+    return el;
+  }
+
+  function column(status, tasks, activeStatus, handlers) {
+    const list = h('div', { class: 'column-list' },
+      tasks.map((task) => card(task, handlers)),
+      tasks.length ? null : h('p', { class: 'column-empty' }, 'ลากงานมาวางที่นี่'));
+
+    const section = h('section', {
+      class: status === activeStatus ? 'column is-active' : 'column',
+      'aria-label': STATUS_LABELS[status],
+      dataset: { status },
+    },
+      h('h2', { class: 'column-head' }, icon(status), STATUS_LABELS[status],
+        h('span', { class: 'column-count' }, String(tasks.length))),
+      list);
+
+    section.addEventListener('dragover', (event) => {
+      if (!dragId) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      if (!section.classList.contains('is-over')) {
+        clearIndicators();
+        section.classList.add('is-over');
+      }
+      const before = cardBefore(list, event.clientY);
+      if (before) list.insertBefore(slot, before);
+      else list.appendChild(slot);
+    });
+    section.addEventListener('dragleave', (event) => {
+      if (!section.contains(event.relatedTarget)) {
+        section.classList.remove('is-over');
+        slot.remove();
+      }
+    });
+    section.addEventListener('drop', (event) => {
+      if (!dragId) return;
+      event.preventDefault();
+      const before = cardBefore(list, event.clientY);
+      const id = dragId;
+      dragId = null;
+      clearIndicators();
+      handlers.onMove(id, status, before ? before.dataset.id : null);
+    });
+    return section;
+  }
+
+  function tabs(groups, activeStatus, onSelect) {
+    return h('div', { class: 'board-tabs', role: 'tablist', 'aria-label': 'คอลัมน์บอร์ด' },
+      STATUS_ORDER.map((status) => h('button', {
+        type: 'button',
+        role: 'tab',
+        class: 'board-tab',
+        'aria-selected': String(status === activeStatus),
+        onClick: () => onSelect(status),
+      }, STATUS_LABELS[status], h('span', { class: 'column-count' }, String(groups[status].length)))));
+  }
+
+  function render(container, tasks, activeStatus, handlers) {
+    const groups = { todo: [], in_progress: [], done: [] };
+    tasks.forEach((task) => groups[task.status] && groups[task.status].push(task));
+    container.replaceChildren(
+      tabs(groups, activeStatus, handlers.onSelectColumn),
+      h('div', { class: 'board' }, STATUS_ORDER.map((status) => column(status, groups[status], activeStatus, handlers))));
+  }
+
+  return {
+    render,
+    isDragging: () => dragId !== null,
+  };
+})();
+</script>

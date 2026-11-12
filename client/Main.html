@@ -1,0 +1,50 @@
+<header class="app-header">
+  <div class="header-inner">
+    <h1 class="app-title">Mini Tasks</h1>
+    <div class="search">
+      <label for="search-input" class="visually-hidden">ค้นหางาน</label>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14" stroke-linecap="round"/></svg>
+      <input id="search-input" class="search-input" type="search" placeholder="ค้นหางาน" autocomplete="off">
+    </div>
+    <div class="view-switch" role="group" aria-label="มุมมอง">
+      <button type="button" class="view-btn" data-view="list" aria-pressed="true" aria-label="รายการ">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h10" stroke-linecap="round"/></svg>
+        <span class="label" aria-hidden="true">รายการ</span>
+      </button>
+      <button type="button" class="view-btn" data-view="board" aria-pressed="false" aria-label="บอร์ด">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="3" height="10" rx="1"/><rect x="6.5" y="3" width="3" height="7" rx="1"/><rect x="10.5" y="3" width="3" height="5" rx="1"/></svg>
+        <span class="label" aria-hidden="true">บอร์ด</span>
+      </button>
+    </div>
+    <button type="button" class="btn btn-primary" id="new-task-btn">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke-linecap="round"/></svg>
+      งานใหม่
+    </button>
+  </div>
+</header>
+
+<main class="main">
+  <p class="match-label" id="match-label" aria-live="polite" hidden></p>
+
+  <div class="state-box" id="loading-state">
+    <p>กำลังโหลด…</p>
+  </div>
+
+  <div class="state-box" id="error-state" hidden>
+    <p id="error-state-message">โหลดข้อมูลไม่สำเร็จ</p>
+    <p><button type="button" class="btn btn-secondary btn-sm" id="retry-btn">ลองอีกครั้ง</button></p>
+  </div>
+
+  <div class="state-box" id="empty-tasks" hidden>
+    <p>ยังไม่มีงาน</p>
+    <p><button type="button" class="btn btn-primary btn-sm" id="empty-new-btn">งานใหม่</button></p>
+  </div>
+
+  <div class="state-box" id="empty-results" hidden>
+    <p id="empty-results-message"></p>
+    <p><button type="button" class="btn btn-secondary btn-sm" id="clear-search-btn">ล้างคำค้นหา</button></p>
+  </div>
+
+  <section id="list-view" aria-label="รายการงาน" hidden></section>
+  <section id="board-view" aria-label="บอร์ดงาน" hidden></section>
+</main>

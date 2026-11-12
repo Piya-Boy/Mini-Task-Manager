@@ -1,0 +1,52 @@
+<script>
+/**
+ * Loads Drive images. Tries the link-shared thumbnail endpoint first, then
+ * falls back to bytes served by the backend, which also detects deleted files.
+ */
+const ImageSource = (() => {
+  const SIZES = { thumb: 320, full: 1600 };
+  const fallbackCache = new Map();
+
+  function driveUrl(fileId, variant) {
+    return 'https://drive.google.com/thumbnail?id=' + encodeURIComponent(fileId) + '&sz=w' + SIZES[variant];
+  }
+
+  function fetchFallback(image, variant) {
+    const key = image.image_id + ':' + variant;
+    if (!fallbackCache.has(key)) {
+      const pending = Api.getImageData(image.image_id, variant).catch((error) => {
+        fallbackCache.delete(key);
+        throw error;
+      });
+      fallbackCache.set(key, pending);
+    }
+    return fallbackCache.get(key);
+  }
+
+  /**
+   * @param {HTMLImageElement} img
+   * @param {{image_id: string, drive_file_id: string}} image
+   * @param {'thumb'|'full'} variant
+   * @param {(state: 'missing'|'error') => void} onFail
+   */
+  function load(img, image, variant, onFail) {
+    let usedFallback = false;
+    img.addEventListener('error', () => {
+      if (usedFallback) {
+        onFail('error');
+        return;
+      }
+      usedFallback = true;
+      fetchFallback(image, variant)
+        .then((result) => {
+          if (result.missing) onFail('missing');
+          else img.src = result.dataUrl;
+        })
+        .catch(() => onFail('error'));
+    });
+    img.src = driveUrl(image.drive_file_id, variant);
+  }
+
+  return { load };
+})();
+</script>

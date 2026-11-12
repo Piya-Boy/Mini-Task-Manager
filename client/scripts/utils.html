@@ -1,0 +1,113 @@
+<script>
+const Utils = (() => {
+  const STATUS_LABELS = { todo: 'ต้องทำ', in_progress: 'กำลังทำ', done: 'เสร็จแล้ว' };
+  const STATUS_ORDER = ['todo', 'in_progress', 'done'];
+  const PRIORITY_LABELS = { low: 'ต่ำ', medium: 'ปานกลาง', high: 'สูง' };
+  const PRIORITY_LEVEL = { low: 1, medium: 2, high: 3 };
+  const IMAGE_LIMITS = {
+    maxCount: 10,
+    maxBytes: 8 * 1024 * 1024,
+    types: ['image/jpeg', 'image/png', 'image/webp'],
+  };
+
+  const ICONS = {
+    image: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1"/><path d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5 2.5 2.5" stroke-linejoin="round"/></svg>',
+    imageLg: '<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1"/><path d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5 2.5 2.5" stroke-linejoin="round"/></svg>',
+    pencil: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M10.5 3.5l2 2L6 12H4v-2z" stroke-linejoin="round"/></svg>',
+    trash: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    close: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>',
+    chevron: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 4.5l3 3 3-3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    todo: '<svg class="status-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5.5" stroke="#8A847F" stroke-width="1.5"/></svg>',
+    in_progress: '<svg class="status-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5.5" stroke="#B45309" stroke-width="1.5"/><path d="M7 3.5a3.5 3.5 0 0 1 0 7z" fill="#B45309"/></svg>',
+    done: '<svg class="status-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="6.25" fill="#4F46E5"/><path d="M4.5 7.2l1.7 1.7 3.4-3.6" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  };
+
+  function icon(name) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = ICONS[name] || '';
+    return tpl.content.firstChild;
+  }
+
+  function priorityIcon(priority) {
+    const level = PRIORITY_LEVEL[priority] || 0;
+    const bar = (n, x, y, height) =>
+      '<rect class="bar' + (level >= n ? ' on' : '') + '" x="' + x + '" y="' + y + '" width="2.5" height="' + height + '" rx="0.5"/>';
+    const tpl = document.createElement('template');
+    tpl.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">' +
+      bar(1, 1.5, 8, 4) + bar(2, 5.75, 5, 7) + bar(3, 10, 2, 10) + '</svg>';
+    return tpl.content.firstChild;
+  }
+
+  /** Minimal element builder. Strings become text nodes, so user data is never parsed as HTML. */
+  function h(tag, props, ...children) {
+    const el = document.createElement(tag);
+    Object.entries(props || {}).forEach(([key, value]) => {
+      if (value === null || value === undefined || value === false) return;
+      if (key === 'class') el.className = value;
+      else if (key === 'dataset') Object.assign(el.dataset, value);
+      else if (key.startsWith('on') && typeof value === 'function') el.addEventListener(key.slice(2).toLowerCase(), value);
+      else if (key === 'value') el.value = value;
+      else el.setAttribute(key, value === true ? '' : String(value));
+    });
+    appendChildren(el, children);
+    return el;
+  }
+
+  function appendChildren(el, children) {
+    children.flat(Infinity).forEach((child) => {
+      if (child === null || child === undefined || child === false) return;
+      el.appendChild(child instanceof Node ? child : document.createTextNode(String(child)));
+    });
+  }
+
+  function statusSelect(task, { id, small, label, onChange }) {
+    const select = h('select', { id, class: small ? 'select select-sm' : 'select', onChange },
+      STATUS_ORDER.map((status) => h('option', { value: status }, STATUS_LABELS[status])));
+    select.value = task.status;
+    return h('span', { class: 'select-wrap' },
+      h('label', { for: id, class: 'visually-hidden' }, label),
+      select,
+      icon('chevron'));
+  }
+
+  function formatSize(bytes) {
+    if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+  }
+
+  function debounce(fn, wait) {
+    let timer = null;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), wait);
+    };
+  }
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'r' + Date.now().toString(16) + '-' + Math.random().toString(16).slice(2, 14);
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function storageGet(key) {
+    try { return window.localStorage.getItem(key); } catch (e) { return null; }
+  }
+
+  function storageSet(key, value) {
+    try { window.localStorage.setItem(key, value); } catch (e) { /* storage unavailable */ }
+  }
+
+  return {
+    STATUS_LABELS, STATUS_ORDER, PRIORITY_LABELS, IMAGE_LIMITS,
+    icon, priorityIcon, h, statusSelect, formatSize, debounce, uuid, readFileAsBase64, storageGet, storageSet,
+  };
+})();
+</script>

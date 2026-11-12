@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "skills": {
+    "software-engineer": {
+      "source": "siviter-xyz/dot-agent",
+      "sourceType": "github",
+      "skillPath": "skills/software-engineer/SKILL.md",
+      "computedHash": "2ea56ce6aafeb3a3881cfa31fb7c7e79eeb98cbc5e1bd23b43a957d35ac7155a"
+    }
+  }
+}

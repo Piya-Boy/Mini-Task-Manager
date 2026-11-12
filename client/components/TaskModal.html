@@ -1,0 +1,65 @@
+<dialog class="dialog" id="task-modal" aria-labelledby="task-modal-title">
+  <div class="dialog-header">
+    <h2 class="dialog-title" id="task-modal-title">งานใหม่</h2>
+    <button type="button" class="btn btn-icon" id="task-close" aria-label="ปิด">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <form class="dialog-form" id="task-form" novalidate>
+    <div class="field">
+      <label class="field-label" for="task-title">ชื่องาน</label>
+      <input class="input" id="task-title" type="text" maxlength="200" autocomplete="off" aria-describedby="task-title-error">
+      <span class="field-error" id="task-title-error" hidden>กรุณาใส่ชื่องาน</span>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="task-description">รายละเอียด <span class="optional">(ไม่บังคับ)</span></label>
+      <textarea class="textarea" id="task-description" rows="4" maxlength="5000"></textarea>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label class="field-label" for="task-status">สถานะ</label>
+        <select class="select-field" id="task-status">
+          <option value="todo">ต้องทำ</option>
+          <option value="in_progress">กำลังทำ</option>
+          <option value="done">เสร็จแล้ว</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label" for="task-priority">ความสำคัญ <span class="optional">(ไม่บังคับ)</span></label>
+        <select class="select-field" id="task-priority">
+          <option value="">ไม่ระบุ</option>
+          <option value="low">ต่ำ</option>
+          <option value="medium">ปานกลาง</option>
+          <option value="high">สูง</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="attach-head">
+        <span class="field-label" id="attach-label">รูปภาพ <span class="optional">(ไม่บังคับ)</span></span>
+        <span class="attach-count" id="attach-count">0 / 10</span>
+      </div>
+      <div class="drop-zone" id="drop-zone" role="group" aria-labelledby="attach-label">
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1"/><path d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5 2.5 2.5" stroke-linejoin="round"/></svg>
+        <p>วางด้วย <kbd>Ctrl</kbd> + <kbd>V</kbd> ลากไฟล์มาวางที่นี่ หรือ</p>
+        <input class="visually-hidden file-input" id="file-input" type="file" multiple accept="image/jpeg,image/png,image/webp">
+        <label class="btn btn-secondary btn-sm file-label" for="file-input">เลือกรูป</label>
+        <p class="limits">JPG, PNG หรือ WebP · ไม่เกิน 8 MB ต่อรูป · สูงสุด 10 รูปต่องาน</p>
+      </div>
+      <ul class="error-list" id="image-errors" role="alert" hidden></ul>
+      <ul class="image-grid" id="image-grid" aria-label="รูปที่แนบ" hidden></ul>
+    </div>
+
+    <p class="form-error" id="task-form-error" role="alert" hidden></p>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn btn-danger-text" id="task-delete" hidden>ลบ</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-secondary" id="task-cancel">ยกเลิก</button>
+      <button type="submit" class="btn btn-primary" id="task-submit">สร้างงาน</button>
+    </div>
+  </form>
+</dialog>

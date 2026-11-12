@@ -1,0 +1,17 @@
+<script>
+const Toast = (() => {
+  const region = document.getElementById('toast-region');
+  let timer = null;
+
+  function show(message, { error = false } = {}) {
+    clearTimeout(timer);
+    region.replaceChildren(Utils.h('div', { class: error ? 'toast is-error' : 'toast' }, message));
+    timer = setTimeout(() => region.replaceChildren(), error ? 7000 : 4000);
+  }
+
+  return {
+    show,
+    error: (message) => show(message, { error: true }),
+  };
+})();
+</script>

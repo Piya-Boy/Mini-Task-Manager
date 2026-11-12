@@ -1,0 +1,62 @@
+<script>
+const Lightbox = (() => {
+  const dialog = document.getElementById('lightbox');
+  const nameEl = document.getElementById('lightbox-name');
+  const posEl = document.getElementById('lightbox-pos');
+  const frame = document.getElementById('lightbox-frame');
+  const prevBtn = document.getElementById('lightbox-prev');
+  const nextBtn = document.getElementById('lightbox-next');
+  const { h } = Utils;
+
+  let items = [];
+  let index = 0;
+
+  function note(text) {
+    frame.replaceChildren(h('div', { class: 'lightbox-note' }, text));
+  }
+
+  function render() {
+    const item = items[index];
+    nameEl.textContent = item.name;
+    posEl.textContent = items.length > 1 ? (index + 1) + ' / ' + items.length : '';
+    prevBtn.disabled = nextBtn.disabled = items.length < 2;
+
+    const img = h('img', { alt: item.name });
+    frame.replaceChildren(img);
+    if (item.url) {
+      img.src = item.url;
+      return;
+    }
+    ImageSource.load(img, item.image, 'full', (reason) => {
+      if (items[index] !== item) return;
+      note(reason === 'missing' ? 'ไม่พบรูปนี้ใน Google Drive อาจถูกลบไปแล้ว' : 'โหลดรูปไม่สำเร็จ กรุณาลองใหม่');
+    });
+  }
+
+  function step(delta) {
+    if (items.length < 2) return;
+    index = (index + delta + items.length) % items.length;
+    render();
+  }
+
+  /** @param {{name: string, url?: string, image?: object}[]} list */
+  function open(list, startIndex) {
+    if (!list.length) return;
+    items = list;
+    index = Math.min(Math.max(startIndex || 0, 0), list.length - 1);
+    render();
+    if (!dialog.open) dialog.showModal();
+  }
+
+  document.getElementById('lightbox-close').addEventListener('click', () => dialog.close());
+  prevBtn.addEventListener('click', () => step(-1));
+  nextBtn.addEventListener('click', () => step(1));
+  dialog.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowLeft') step(-1);
+    else if (event.key === 'ArrowRight') step(1);
+  });
+  dialog.addEventListener('close', () => frame.replaceChildren());
+
+  return { open };
+})();
+</script>

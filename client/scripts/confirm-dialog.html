@@ -1,0 +1,51 @@
+<script>
+const ConfirmDialog = (() => {
+  const dialog = document.getElementById('confirm-dialog');
+  const titleEl = document.getElementById('confirm-title');
+  const messageEl = document.getElementById('confirm-message');
+  const okBtn = document.getElementById('confirm-ok');
+  const cancelBtn = document.getElementById('confirm-cancel');
+
+  let current = null;
+  let busy = false;
+
+  function setBusy(value, label) {
+    busy = value;
+    okBtn.disabled = cancelBtn.disabled = value;
+    okBtn.textContent = label;
+  }
+
+  /**
+   * @param {{title: string, message: string, confirmLabel: string, busyLabel: string, onConfirm: () => Promise<void>}} options
+   */
+  function open(options) {
+    current = options;
+    titleEl.textContent = options.title;
+    messageEl.textContent = options.message;
+    setBusy(false, options.confirmLabel);
+    dialog.showModal();
+    cancelBtn.focus();
+  }
+
+  okBtn.addEventListener('click', async () => {
+    if (!current || busy) return;
+    const options = current;
+    setBusy(true, options.busyLabel);
+    try {
+      await options.onConfirm();
+      dialog.close();
+    } catch (error) {
+      dialog.close();
+      Toast.error(error.message);
+    } finally {
+      setBusy(false, options.confirmLabel);
+    }
+  });
+  cancelBtn.addEventListener('click', () => dialog.close());
+  dialog.addEventListener('cancel', (event) => {
+    if (busy) event.preventDefault();
+  });
+
+  return { open };
+})();
+</script>

@@ -1,0 +1,14 @@
+{
+  "name": "mini-task-manager",
+  "private": true,
+  "description": "Two-person task manager on Google Apps Script. Node is only used for local tests and preview.",
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "check": "node tools/check-client.js",
+    "preview": "node tools/preview-server.js",
+    "build:static": "node tools/build-static.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
