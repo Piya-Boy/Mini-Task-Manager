@@ -9,10 +9,12 @@ const Db = (() => {
   function initialize(target) {
     const tasks = CONFIG.SHEETS.TASKS;
     const images = CONFIG.SHEETS.IMAGES;
+    const links = CONFIG.SHEETS.LINKS;
     const first = target.getSheets()[0];
     first.setName(tasks.name);
     writeHeaders_(first, tasks);
     writeHeaders_(target.insertSheet(images.name), images);
+    writeHeaders_(target.insertSheet(links.name), links);
   }
 
   function writeHeaders_(sheet, def) {
@@ -32,8 +34,14 @@ const Db = (() => {
     const ss = getSpreadsheet_();
     let sheet = ss.getSheetByName(def.name);
     if (!sheet) {
-      sheet = ss.insertSheet(def.name);
-      writeHeaders_(sheet, def);
+      // Another execution may create the same sheet between the lookup and the insert.
+      try {
+        sheet = ss.insertSheet(def.name);
+        writeHeaders_(sheet, def);
+      } catch (error) {
+        sheet = ss.getSheetByName(def.name);
+        if (!sheet) throw error;
+      }
     } else {
       const actual = sheet.getRange(1, 1, 1, def.headers.length).getValues()[0];
       if (actual.join('|') !== def.headers.join('|')) {

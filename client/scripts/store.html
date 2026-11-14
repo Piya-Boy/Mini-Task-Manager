@@ -73,7 +73,10 @@ const Store = (() => {
     filteredTasks() {
       const q = state.query.trim().toLocaleLowerCase();
       if (!q) return state.tasks;
-      return state.tasks.filter((t) => (t.title + '\n' + t.description).toLocaleLowerCase().includes(q));
+      return state.tasks.filter((t) => {
+        const linkText = Utils.linksOf(t).map((l) => l.url).join('\n');
+        return (t.title + '\n' + t.description + '\n' + linkText).toLocaleLowerCase().includes(q);
+      });
     },
   };
 })();

@@ -39,18 +39,28 @@
 
     <div class="field">
       <div class="attach-head">
-        <span class="field-label" id="attach-label">รูปภาพ <span class="optional">(ไม่บังคับ)</span></span>
+        <span class="field-label" id="links-label">ลิงก์ <span class="optional">(ไม่บังคับ)</span></span>
+        <span class="attach-count" id="links-count">0 / 10</span>
+      </div>
+      <ul class="link-list" id="link-list" aria-labelledby="links-label" hidden></ul>
+      <span class="field-error" id="link-error" role="alert" hidden></span>
+      <button type="button" class="btn btn-secondary btn-sm link-add" id="link-add">+ เพิ่มลิงก์</button>
+    </div>
+
+    <div class="field">
+      <div class="attach-head">
+        <span class="field-label" id="attach-label">ไฟล์แนบ <span class="optional">(ไม่บังคับ)</span></span>
         <span class="attach-count" id="attach-count">0 / 10</span>
       </div>
       <div class="drop-zone" id="drop-zone" role="group" aria-labelledby="attach-label">
         <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1"/><path d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5 2.5 2.5" stroke-linejoin="round"/></svg>
-        <p>วางด้วย <kbd>Ctrl</kbd> + <kbd>V</kbd> ลากไฟล์มาวางที่นี่ หรือ</p>
-        <input class="visually-hidden file-input" id="file-input" type="file" multiple accept="image/jpeg,image/png,image/webp">
-        <label class="btn btn-secondary btn-sm file-label" for="file-input">เลือกรูป</label>
-        <p class="limits">JPG, PNG หรือ WebP · ไม่เกิน 8 MB ต่อรูป · สูงสุด 10 รูปต่องาน</p>
+        <p>วางรูปด้วย <kbd>Ctrl</kbd> + <kbd>V</kbd> ลากไฟล์มาวางที่นี่ หรือ</p>
+        <input class="visually-hidden file-input" id="file-input" type="file" multiple>
+        <label class="btn btn-secondary btn-sm file-label" for="file-input">เลือกไฟล์</label>
+        <p class="limits">รูป JPG PNG WebP, PDF, Word, Excel, PowerPoint, txt, csv, md, zip · ไม่เกิน 8 MB ต่อไฟล์ · สูงสุด 10 ไฟล์ต่องาน</p>
       </div>
       <ul class="error-list" id="image-errors" role="alert" hidden></ul>
-      <ul class="image-grid" id="image-grid" aria-label="รูปที่แนบ" hidden></ul>
+      <ul class="image-grid" id="image-grid" aria-label="ไฟล์ที่แนบ" hidden></ul>
     </div>
 
     <p class="form-error" id="task-form-error" role="alert" hidden></p>

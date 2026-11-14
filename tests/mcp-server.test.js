@@ -56,10 +56,10 @@ test('tools/list flags read tools read-only and delete as destructive', async ()
   const { rpc } = setup();
   const { tools } = (await rpc('tools/list')).result;
   assert.deepEqual(tools.map((t) => t.name),
-    ['list_tasks', 'get_task', 'get_task_image', 'create_task', 'upload_task_image', 'update_task', 'move_task', 'delete_task']);
+    ['list_tasks', 'get_task', 'get_task_file', 'create_task', 'upload_task_file', 'update_task', 'move_task', 'delete_task']);
   const byName = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
-  for (const name of ['list_tasks', 'get_task', 'get_task_image']) assert.equal(byName[name].readOnlyHint, true);
-  for (const name of ['create_task', 'upload_task_image', 'update_task', 'move_task', 'delete_task']) assert.equal(byName[name].readOnlyHint, false);
+  for (const name of ['list_tasks', 'get_task', 'get_task_file']) assert.equal(byName[name].readOnlyHint, true);
+  for (const name of ['create_task', 'upload_task_file', 'update_task', 'move_task', 'delete_task']) assert.equal(byName[name].readOnlyHint, false);
   assert.equal(byName.delete_task.destructiveHint, true);
 });
 
@@ -97,27 +97,47 @@ test('bad input becomes a tool error or a JSON-RPC error', async () => {
   assert.equal((await rpc('tools/call', { name: 'get_task', arguments: [] })).error.code, -32602);
 });
 
-test('get_task returns the full description and image metadata', async () => {
+test('get_task returns the full description and file metadata', async () => {
   const { tool, addTask, run } = setup();
   const task = addTask({ title: 'With image', description: 'y'.repeat(300) });
   run('apiUploadImage', task.task_id, { name: 'a.png', mimeType: 'image/png', data: solidPng(8, 8, [1, 2, 3]).toString('base64') });
   const got = payload(await tool('get_task', { task_id: task.task_id }));
   assert.equal(got.description.length, 300);
-  assert.deepEqual(Object.keys(got.images[0]), ['image_id', 'file_name', 'mime_type', 'size_bytes']);
-  assert.equal(got.images[0].file_name, 'a.png');
+  assert.deepEqual(Object.keys(got.files[0]), ['file_id', 'file_name', 'mime_type', 'size_bytes']);
+  assert.equal(got.files[0].file_name, 'a.png');
 });
 
-test('get_task_image returns MCP image content and reports missing images', async () => {
+test('get_task_file returns MCP image content and reports missing files', async () => {
   const { tool, addTask, run } = setup();
   const task = addTask({ title: 'pic' });
   const png = solidPng(8, 8, [9, 9, 9]);
-  const image = run('apiUploadImage', task.task_id, { name: 'p.png', mimeType: 'image/png', data: png.toString('base64') }).image;
-  const result = await tool('get_task_image', { image_id: image.image_id, variant: 'full' });
+  const image = run('apiUploadImage', task.task_id, { name: 'p.png', data: png.toString('base64') }).image;
+  const result = await tool('get_task_file', { file_id: image.image_id, variant: 'full' });
   assert.equal(result.content[0].type, 'image');
   assert.equal(result.content[0].mimeType, 'image/png');
   assert.deepEqual(Buffer.from(result.content[0].data, 'base64'), png);
-  assert.equal((await tool('get_task_image', { image_id: 'i_missing' })).isError, true);
-  assert.equal((await tool('get_task_image', { image_id: image.image_id, variant: 'huge' })).isError, true);
+  assert.equal((await tool('get_task_file', { file_id: 'i_missing' })).isError, true);
+  assert.equal((await tool('get_task_file', { file_id: image.image_id, variant: 'huge' })).isError, true);
+});
+
+test('get_task_file returns documents whole and text files as text', async () => {
+  const { tool, addTask, run } = setup();
+  const task = addTask({ title: 'docs' });
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(64, 0x61)]);
+  const upload = (name, bytes) => run('apiUploadImage', task.task_id, { name, data: bytes.toString('base64') }).image;
+  const pdfFile = upload('spec.pdf', pdf);
+  const csvFile = upload('data.csv', Buffer.from('ชื่อ,จำนวน\nแก้ว,2\n'));
+
+  const gotPdf = (await tool('get_task_file', { file_id: pdfFile.image_id, variant: 'thumb' })).content[0];
+  assert.equal(gotPdf.type, 'resource');
+  assert.equal(gotPdf.resource.mimeType, 'application/pdf');
+  assert.equal(gotPdf.resource.uri, 'mini-tasks://file/' + pdfFile.image_id);
+  assert.deepEqual(Buffer.from(gotPdf.resource.blob, 'base64'), pdf);
+
+  const gotCsv = (await tool('get_task_file', { file_id: csvFile.image_id })).content[0];
+  assert.equal(gotCsv.resource.mimeType, 'text/csv');
+  assert.equal(gotCsv.resource.text, 'ชื่อ,จำนวน\nแก้ว,2\n');
+  assert.ok(!('blob' in gotCsv.resource));
 });
 
 test('read tools only call read functions on the backend', async () => {
@@ -126,8 +146,8 @@ test('read tools only call read functions on the backend', async () => {
   seen.length = 0;
   await tool('list_tasks', {});
   await tool('get_task', { task_id: task.task_id });
-  await tool('get_task_image', { image_id: 'i_none' });
-  assert.deepEqual([...new Set(seen)].sort(), ['apiGetImageData', 'apiListTasks']);
+  await tool('get_task_file', { file_id: 'i_none' });
+  assert.deepEqual([...new Set(seen)], ['apiListTasks']);
 });
 
 const PNG_B64 = solidPng(8, 8, [1, 2, 3]).toString('base64');
@@ -151,34 +171,51 @@ function tempFile(name, bytes) {
   return file;
 }
 
-test('upload_task_image attaches a local image and the bytes round-trip', async () => {
+test('upload_task_file attaches a local image and the bytes round-trip', async () => {
   const { tool, addTask, run } = setup();
   const task = addTask({ title: 'pic' });
   const png = solidPng(16, 16, [10, 20, 30]);
   const file = tempFile('photo.png', png);
-  const result = payload(await tool('upload_task_image', { task_id: task.task_id, file_path: file }));
+  const result = payload(await tool('upload_task_file', { task_id: task.task_id, file_path: file }));
   assert.equal(result.task_id, task.task_id);
-  assert.deepEqual([result.image.file_name, result.image.mime_type, result.image.size_bytes], ['photo.png', 'image/png', png.length]);
-  assert.ok(!('drive_file_id' in result.image));
+  assert.deepEqual([result.file.file_name, result.file.mime_type, result.file.size_bytes], ['photo.png', 'image/png', png.length]);
+  assert.ok(!('drive_file_id' in result.file));
   const stored = run('apiListTasks').tasks[0].images;
   assert.equal(stored.length, 1);
-  const back = await tool('get_task_image', { image_id: stored[0].image_id, variant: 'full' });
+  const back = await tool('get_task_file', { file_id: stored[0].image_id, variant: 'full' });
   assert.deepEqual(Buffer.from(back.content[0].data, 'base64'), png);
 });
 
-test('upload_task_image trusts file content, not the extension', async () => {
+test('upload_task_file attaches documents and the server checks the content', async () => {
+  const { tool, addTask, run } = setup();
+  const task = addTask({ title: 'docs' });
+  const pdf = tempFile('brief.pdf', Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(32, 0x62)]));
+  const made = payload(await tool('upload_task_file', { task_id: task.task_id, file_path: pdf }));
+  assert.deepEqual([made.file.file_name, made.file.mime_type], ['brief.pdf', 'application/pdf']);
+
+  const notes = tempFile('notes.txt', Buffer.from('hello'));
+  assert.equal(payload(await tool('upload_task_file', { task_id: task.task_id, file_path: notes })).file.mime_type, 'text/plain');
+
+  const fakePdf = tempFile('fake.pdf', Buffer.from('not a pdf'));
+  const exe = tempFile('tool.exe', Buffer.from('MZ-not-allowed'));
+  assert.equal((await tool('upload_task_file', { task_id: task.task_id, file_path: fakePdf })).isError, true);
+  assert.equal((await tool('upload_task_file', { task_id: task.task_id, file_path: exe })).isError, true);
+  assert.equal(run('apiListTasks').tasks[0].images.length, 2);
+});
+
+test('upload_task_file trusts file content over the extension for images', async () => {
   const { tool, addTask, run } = setup();
   const task = addTask({ title: 'pic' });
   const disguised = tempFile('notes.png', Buffer.from('just some text, not an image'));
-  assert.equal((await tool('upload_task_image', { task_id: task.task_id, file_path: disguised })).isError, true);
+  assert.equal((await tool('upload_task_file', { task_id: task.task_id, file_path: disguised })).isError, true);
   const mislabeled = tempFile('photo.txt', solidPng(8, 8, [1, 1, 1]));
-  const ok = await tool('upload_task_image', { task_id: task.task_id, file_path: mislabeled });
+  const ok = await tool('upload_task_file', { task_id: task.task_id, file_path: mislabeled });
   assert.equal(ok.isError, undefined);
-  assert.equal(payload(ok).image.mime_type, 'image/png');
+  assert.equal(payload(ok).file.mime_type, 'image/png');
   assert.equal(run('apiListTasks').tasks[0].images.length, 1);
 });
 
-test('upload_task_image rejects missing files, directories, big files and bad ids', async () => {
+test('upload_task_file rejects missing files, directories, big files and bad ids', async () => {
   const { tool, addTask } = setup();
   const task = addTask({ title: 'pic' });
   const good = tempFile('ok.png', solidPng(8, 8, [1, 1, 1]));
@@ -192,7 +229,7 @@ test('upload_task_image rejects missing files, directories, big files and bad id
     { file_path: good },
   ];
   for (const args of cases) {
-    const result = await tool('upload_task_image', args);
+    const result = await tool('upload_task_file', args);
     assert.equal(result.isError, true, JSON.stringify(args));
   }
 });
@@ -217,7 +254,46 @@ test('update_task keeps images and status', async () => {
   run('apiUploadImage', task.task_id, { name: 'a.png', mimeType: 'image/png', data: PNG_B64 });
   const updated = payload(await tool('update_task', { task_id: task.task_id, title: 'pic2' }));
   assert.equal(updated.status, 'in_progress');
-  assert.equal(updated.images.length, 1);
+  assert.equal(updated.files.length, 1);
+});
+
+test('links round-trip through create, get, list and update without exposing ids', async () => {
+  const { tool, addTask } = setup();
+  const made = payload(await tool('create_task', {
+    title: 'with links',
+    links: ['https://example.com/spec', ' https://example.com/b '],
+  }));
+  assert.deepEqual(made.links, ['https://example.com/spec', 'https://example.com/b']);
+
+  const got = payload(await tool('get_task', { task_id: made.task_id }));
+  assert.deepEqual(got.links, made.links);
+  const listed = payload(await tool('list_tasks', {})).tasks[0];
+  assert.equal(listed.links, 2);
+
+  const renamed = payload(await tool('update_task', { task_id: made.task_id, title: 'renamed' }));
+  assert.deepEqual(renamed.links, made.links);
+
+  const replaced = payload(await tool('update_task', { task_id: made.task_id, links: ['https://new.example'] }));
+  assert.deepEqual(replaced.links, ['https://new.example']);
+  assert.deepEqual(payload(await tool('update_task', { task_id: made.task_id, links: [] })).links, []);
+  assert.deepEqual(payload(await tool('get_task', { task_id: addTask({ title: 'plain' }).task_id })).links, []);
+});
+
+test('bad links become tool errors and change nothing', async () => {
+  const { tool, addTask, run } = setup();
+  const task = addTask({ title: 'safe', links: [{ url: 'https://keep.example' }] });
+  const bad = [
+    'https://example.com',
+    ['javascript:alert(1)'],
+    ['file:///etc/passwd'],
+    [{ url: 'https://example.com' }],
+    [null],
+  ];
+  for (const links of bad) {
+    assert.equal((await tool('update_task', { task_id: task.task_id, links })).isError, true, JSON.stringify(links));
+    assert.equal((await tool('create_task', { title: 'x', links })).isError, true, JSON.stringify(links));
+  }
+  assert.deepEqual(run('apiListTasks').tasks.map((t) => t.links.map((l) => l.url)), [['https://keep.example']]);
 });
 
 test('move_task changes status and honours before_task_id', async () => {
@@ -233,13 +309,13 @@ test('move_task changes status and honours before_task_id', async () => {
   assert.equal((await tool('move_task', { task_id: 't_missing', status: 'done' })).isError, true);
 });
 
-test('delete_task removes the task and its images', async () => {
+test('delete_task removes the task and its files', async () => {
   const { tool, addTask, run } = setup();
   const task = addTask({ title: 'gone' });
   const keep = addTask({ title: 'stay' });
   run('apiUploadImage', task.task_id, { name: 'a.png', mimeType: 'image/png', data: PNG_B64 });
   const result = payload(await tool('delete_task', { task_id: task.task_id }));
-  assert.deepEqual(result, { deleted: task.task_id, removed_images: 1 });
+  assert.deepEqual(result, { deleted: task.task_id, removed_files: 1 });
   assert.deepEqual(run('apiListTasks').tasks.map((t) => t.task_id), [keep.task_id]);
   assert.equal((await tool('delete_task', { task_id: task.task_id })).isError, true);
   assert.equal((await tool('delete_task', {})).isError, true);

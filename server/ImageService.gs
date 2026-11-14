@@ -45,7 +45,18 @@ const ImageService = (() => {
     }
   }
 
-  function trashDriveFile_(fileId) {
+  /**
+   * Deletes the file for good (no trash) through the Advanced Drive service. If that service is
+   * unavailable or refuses, the file goes to the trash instead so a delete never fails halfway.
+   */
+  function removeDriveFile_(fileId) {
+    try {
+      Drive.Files.remove(fileId);
+      return;
+    } catch (error) {
+      if (/not found/i.test(String(error && error.message))) return;
+      console.warn('Permanent delete failed, moving to trash: ' + fileId + ' ' + error);
+    }
     try {
       DriveApp.getFileById(fileId).setTrashed(true);
     } catch (error) {
@@ -55,15 +66,15 @@ const ImageService = (() => {
 
   function upload(taskId, file) {
     const id = Validation.taskId(taskId);
-    const image = Validation.imageUpload(file);
+    const image = Validation.fileUpload(file);
 
     return withWriteLock_(() => {
       const taskExists = Db.readAll(CONFIG.SHEETS.TASKS).some((row) => row.task_id === id);
       if (!taskExists) throw new AppError('NOT_FOUND', 'ไม่พบงานนี้ อาจถูกลบไปแล้ว');
 
       const count = Db.readAll(sheet_()).filter((row) => row.task_id === id).length;
-      if (count >= CONFIG.LIMITS.IMAGES_PER_TASK) {
-        throw new AppError('LIMIT', image.name + ' — งานนี้มีรูปครบ ' + CONFIG.LIMITS.IMAGES_PER_TASK + ' รูปแล้ว');
+      if (count >= CONFIG.LIMITS.FILES_PER_TASK) {
+        throw new AppError('LIMIT', image.name + ' — งานนี้มีไฟล์ครบ ' + CONFIG.LIMITS.FILES_PER_TASK + ' ไฟล์แล้ว');
       }
 
       const blob = Utilities.newBlob(image.bytes, image.mimeType, image.name);
@@ -82,7 +93,7 @@ const ImageService = (() => {
         Db.append(sheet_(), [record]);
         return toDto_(record);
       } catch (error) {
-        trashDriveFile_(driveFile.getId());
+        removeDriveFile_(driveFile.getId());
         throw error;
       }
     });
@@ -93,7 +104,7 @@ const ImageService = (() => {
     const targets = Db.readAll(sheet_()).filter(
       (row) => row.task_id === taskId && (!imageIds || imageIds.indexOf(row.image_id) !== -1)
     );
-    targets.forEach((row) => trashDriveFile_(row.drive_file_id));
+    targets.forEach((row) => removeDriveFile_(row.drive_file_id));
     Db.remove(sheet_(), targets);
     return targets.length;
   }

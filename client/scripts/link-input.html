@@ -1,0 +1,101 @@
+<script>
+/** Links field of the task modal: a list of URL rows. */
+const LinkInput = (() => {
+  const list = document.getElementById('link-list');
+  const addBtn = document.getElementById('link-add');
+  const countEl = document.getElementById('links-count');
+  const errorEl = document.getElementById('link-error');
+  const { h, icon, LINK_LIMITS } = Utils;
+
+  let rows = [];
+  let disabled = false;
+
+  function showError(message) {
+    errorEl.textContent = message || '';
+    errorEl.hidden = !message;
+  }
+
+  function syncChrome() {
+    countEl.textContent = rows.length + ' / ' + LINK_LIMITS.maxCount;
+    list.hidden = rows.length === 0;
+    addBtn.disabled = disabled || rows.length >= LINK_LIMITS.maxCount;
+  }
+
+  function render(focusIndex) {
+    list.replaceChildren(...rows.map((row, index) => {
+      const urlInput = h('input', {
+        class: 'input link-url', type: 'text', inputmode: 'url', autocomplete: 'off', spellcheck: 'false',
+        maxlength: LINK_LIMITS.maxUrl, placeholder: 'https://…', 'aria-label': 'ที่อยู่ลิงก์ ' + (index + 1),
+        value: row.url, disabled: disabled,
+        onInput: (event) => {
+          row.url = event.target.value;
+          event.target.removeAttribute('aria-invalid');
+          showError('');
+        },
+      });
+      return h('li', { class: 'link-row' },
+        urlInput,
+        h('button', {
+          type: 'button', class: 'btn btn-icon', 'aria-label': 'ลบลิงก์ ' + (index + 1), disabled: disabled,
+          onClick: () => {
+            rows.splice(index, 1);
+            showError('');
+            render(Math.min(index, rows.length - 1));
+            if (!rows.length) addBtn.focus();
+          },
+        }, icon('close')));
+    }));
+    syncChrome();
+    if (focusIndex !== undefined && focusIndex >= 0) {
+      const target = list.querySelectorAll('.link-row')[focusIndex];
+      if (target) target.querySelector('.link-url').focus();
+    }
+  }
+
+  function reset(links) {
+    rows = (links || []).map((link) => ({ url: link.url }));
+    showError('');
+    render();
+  }
+
+  function add() {
+    if (disabled || rows.length >= LINK_LIMITS.maxCount) return;
+    rows.push({ url: '' });
+    showError('');
+    render(rows.length - 1);
+  }
+
+  /**
+   * Validates the rows. Returns the links to save (blank rows dropped), or null after
+   * marking the first bad row and showing why.
+   */
+  function read() {
+    const links = [];
+    for (let i = 0; i < rows.length; i++) {
+      const url = Utils.normalizeUrl(rows[i].url);
+      if (url === '') continue;
+      if (url === null) {
+        const input = list.querySelectorAll('.link-url')[i];
+        input.setAttribute('aria-invalid', 'true');
+        showError('ลิงก์ที่ ' + (i + 1) + ' ไม่ถูกต้อง ต้องเป็นที่อยู่เว็บแบบ http:// หรือ https://');
+        input.focus();
+        return null;
+      }
+      links.push({ url });
+    }
+    showError('');
+    return links;
+  }
+
+  function setDisabled(value) {
+    disabled = value;
+    list.querySelectorAll('input, button').forEach((el) => { el.disabled = value; });
+    syncChrome();
+  }
+
+  addBtn.addEventListener('click', add);
+  render();
+
+  return { reset, read, setDisabled };
+})();
+</script>

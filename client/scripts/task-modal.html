@@ -37,6 +37,7 @@ const TaskModal = (() => {
     submitBtn.setAttribute('aria-busy', String(value));
     submitBtn.textContent = value ? label : submitLabel();
     ImageInput.setDisabled(value);
+    LinkInput.setDisabled(value);
   }
 
   function showTitleError(show) {
@@ -61,6 +62,7 @@ const TaskModal = (() => {
     showTitleError(false);
     showFormError('');
     ImageInput.reset(task ? task.images : []);
+    LinkInput.reset(task ? Utils.linksOf(task) : []);
     setBusy(false);
     updateChrome();
     dialog.showModal();
@@ -89,7 +91,7 @@ const TaskModal = (() => {
       setBusy(true, 'กำลังอัปโหลด ' + (i + 1) + '/' + items.length + '…');
       try {
         const data = await Utils.readFileAsBase64(item.file);
-        const result = await Api.uploadImage(id, { name: item.name, mimeType: item.file.type, data });
+        const result = await Api.uploadImage(id, { name: item.name, data });
         ImageInput.markUploaded(item.id, result.image);
         attachImageInStore(id, result.image);
       } catch (error) {
@@ -108,6 +110,9 @@ const TaskModal = (() => {
       titleInput.focus();
       return;
     }
+    const links = LinkInput.read();
+    if (!links) return;
+    fields.links = links;
     showTitleError(false);
     showFormError('');
     setBusy(true, 'กำลังบันทึก…');
@@ -131,7 +136,7 @@ const TaskModal = (() => {
       setBusy(false);
       if (failures.length) {
         ImageInput.setErrors(failures);
-        showFormError('บันทึกงานแล้ว แต่อัปโหลดรูปบางรูปไม่สำเร็จ กด “บันทึก” เพื่อลองอัปโหลดรูปที่เหลืออีกครั้ง');
+        showFormError('บันทึกงานแล้ว แต่อัปโหลดไฟล์บางไฟล์ไม่สำเร็จ กด “บันทึก” เพื่อลองอัปโหลดไฟล์ที่เหลืออีกครั้ง');
         return;
       }
       dialog.close();
@@ -162,6 +167,7 @@ const TaskModal = (() => {
   });
   dialog.addEventListener('close', () => {
     ImageInput.clear();
+    LinkInput.reset([]);
     App.refresh();
   });
 

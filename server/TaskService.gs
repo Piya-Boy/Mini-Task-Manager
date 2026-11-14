@@ -1,7 +1,7 @@
 const TaskService = (() => {
   const sheet_ = () => CONFIG.SHEETS.TASKS;
 
-  function toDto_(row, images) {
+  function toDto_(row, images, links) {
     return {
       task_id: row.task_id,
       title: row.title,
@@ -12,6 +12,14 @@ const TaskService = (() => {
       updated_at: row.updated_at,
       position: row.position,
       images: images || [],
+      links: links || [],
+    };
+  }
+
+  function relations_() {
+    return {
+      images: ImageService.groupByTask(Db.readAll(CONFIG.SHEETS.IMAGES)),
+      links: LinkService.groupByTask(Db.readAll(CONFIG.SHEETS.LINKS)),
     };
   }
 
@@ -31,10 +39,10 @@ const TaskService = (() => {
   }
 
   function list() {
-    const images = ImageService.groupByTask(Db.readAll(CONFIG.SHEETS.IMAGES));
+    const related = relations_();
     return Db.readAll(sheet_())
       .sort(byPosition_)
-      .map((row) => toDto_(row, images[row.task_id]));
+      .map((row) => toDto_(row, related.images[row.task_id], related.links[row.task_id]));
   }
 
   function create(input, requestId) {
@@ -62,8 +70,9 @@ const TaskService = (() => {
         position: endPosition_(rows),
       };
       Db.append(sheet_(), [record]);
+      if (fields.links && fields.links.length) LinkService.replaceForTask_(record.task_id, fields.links);
 
-      const dto = toDto_(record, []);
+      const dto = toDto_(record, [], LinkService.listForTask(record.task_id));
       if (cacheKey) cache.put(cacheKey, JSON.stringify(dto), CONFIG.IDEMPOTENCY_TTL_SECONDS);
       return dto;
     });
@@ -92,7 +101,8 @@ const TaskService = (() => {
       Db.update(sheet_(), [row]);
 
       if (removeIds.length) ImageService.removeImages_(id, removeIds);
-      return toDto_(row, ImageService.listForTask(id));
+      if (fields.links) LinkService.replaceForTask_(id, fields.links);
+      return toDto_(row, ImageService.listForTask(id), LinkService.listForTask(id));
     });
   }
 
@@ -120,8 +130,8 @@ const TaskService = (() => {
       });
       Db.update(sheet_(), changed);
 
-      const images = ImageService.groupByTask(Db.readAll(CONFIG.SHEETS.IMAGES));
-      return changed.map((r) => toDto_(r, images[r.task_id]));
+      const related = relations_();
+      return changed.map((r) => toDto_(r, related.images[r.task_id], related.links[r.task_id]));
     });
   }
 
@@ -157,6 +167,7 @@ const TaskService = (() => {
     return withWriteLock_(() => {
       const row = findRow_(Db.readAll(sheet_()), id);
       const removedImages = ImageService.removeImages_(id, null);
+      LinkService.removeForTask_(id);
       Db.remove(sheet_(), [row]);
       return { task_id: id, removed_images: removedImages };
     });
