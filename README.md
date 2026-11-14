@@ -146,11 +146,12 @@ clasp deploy -i <deployment-id> -d "<what changed>"
 | `get_task` | One task with full description and image list. |
 | `get_task_image` | One image as MCP image content. `variant`: `thumb` (default) or `full`. |
 | `create_task` | New task at the end of its column. Needs `title`. |
+| `upload_task_image` | Attach a local JPG, PNG or WebP file (`file_path`, max 8 MB, 10 per task). Type is checked from the file content, not the extension. |
 | `update_task` | Change `title`, `description` or `priority` (`""` clears it). Other fields stay. Fails if someone edited the task in between. |
 | `move_task` | Set `status`, optionally before `before_task_id`. |
 | `delete_task` | Delete a task and trash its image files. Cannot be undone. |
 
-Images can be read but not uploaded or removed through MCP.
+Images can be read and uploaded but not removed through MCP. `upload_task_image` reads the path on the machine running the server and the file becomes viewable by anyone with the link, like every other image.
 
 Add it to Claude Code:
 
