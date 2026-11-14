@@ -54,7 +54,7 @@ client/
   scripts/               utils, api, store, toast, image-source, lightbox,
                          confirm-dialog, image-input, task-modal, list-view, board-view, app
 tests/                   Node tests with in-memory Apps Script fakes (not deployed)
-tools/                   Client syntax check, local preview server, static page build (not deployed)
+tools/                   Client syntax check, local preview server, static page build, MCP server (not deployed)
 ```
 
 Only top-level functions without a trailing `_` are callable from the browser. Everything else lives inside namespace objects (`Db`, `TaskService`, …) or ends with `_`. A test checks this.
@@ -135,6 +135,32 @@ clasp push
 ```bash
 clasp deploy -i <deployment-id> -d "<what changed>"
 ```
+
+### MCP server (let an AI use the tasks)
+
+`tools/mcp-server.js` is an [MCP](https://modelcontextprotocol.io) server over stdio. It has no dependencies and calls the deployed web app through `doPost`.
+
+| tool | what it does |
+| --- | --- |
+| `list_tasks` | Compact tasks in board order. Optional `status`, `priority`, `query` (title or description), `limit` (default 50, max 200). |
+| `get_task` | One task with full description and image list. |
+| `get_task_image` | One image as MCP image content. `variant`: `thumb` (default) or `full`. |
+| `create_task` | New task at the end of its column. Needs `title`. |
+| `update_task` | Change `title`, `description` or `priority` (`""` clears it). Other fields stay. Fails if someone edited the task in between. |
+| `move_task` | Set `status`, optionally before `before_task_id`. |
+| `delete_task` | Delete a task and trash its image files. Cannot be undone. |
+
+Images can be read but not uploaded or removed through MCP.
+
+Add it to Claude Code:
+
+```bash
+claude mcp add mini-tasks --env MINI_TASKS_API_URL=https://script.google.com/macros/s/<deployment-id>/exec -- node /absolute/path/to/tools/mcp-server.js
+```
+
+Other clients take the same command and environment variable in their MCP config. The URL is the same `/exec` URL used by the static build, without `/u/N/`.
+
+Writes take effect immediately and there is no audit trail, so changes made by the AI look the same as changes made by a person. Task text is written by users; the server tells the client to treat it as data, but a client that auto-approves tool calls can be steered by text inside a task.
 
 ### Spreadsheet and image folder
 
