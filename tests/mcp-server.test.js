@@ -3,6 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { createGas } = require('./gas-harness');
 const { solidPng } = require('./png');
@@ -54,10 +56,10 @@ test('tools/list flags read tools read-only and delete as destructive', async ()
   const { rpc } = setup();
   const { tools } = (await rpc('tools/list')).result;
   assert.deepEqual(tools.map((t) => t.name),
-    ['list_tasks', 'get_task', 'get_task_image', 'create_task', 'update_task', 'move_task', 'delete_task']);
+    ['list_tasks', 'get_task', 'get_task_image', 'create_task', 'upload_task_image', 'update_task', 'move_task', 'delete_task']);
   const byName = Object.fromEntries(tools.map((t) => [t.name, t.annotations]));
   for (const name of ['list_tasks', 'get_task', 'get_task_image']) assert.equal(byName[name].readOnlyHint, true);
-  for (const name of ['create_task', 'update_task', 'move_task', 'delete_task']) assert.equal(byName[name].readOnlyHint, false);
+  for (const name of ['create_task', 'upload_task_image', 'update_task', 'move_task', 'delete_task']) assert.equal(byName[name].readOnlyHint, false);
   assert.equal(byName.delete_task.destructiveHint, true);
 });
 
@@ -140,6 +142,59 @@ test('create_task applies defaults and validates input', async () => {
   const bad = [{}, { title: '' }, { title: 'x'.repeat(201) }, { title: 'x', status: 'nope' }, { title: 'x', priority: 'urgent' }];
   for (const args of bad) assert.equal((await tool('create_task', args)).isError, true, JSON.stringify(args));
   assert.equal(run('apiListTasks').tasks.length, 2);
+});
+
+function tempFile(name, bytes) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mcp-img-'));
+  const file = path.join(dir, name);
+  fs.writeFileSync(file, bytes);
+  return file;
+}
+
+test('upload_task_image attaches a local image and the bytes round-trip', async () => {
+  const { tool, addTask, run } = setup();
+  const task = addTask({ title: 'pic' });
+  const png = solidPng(16, 16, [10, 20, 30]);
+  const file = tempFile('photo.png', png);
+  const result = payload(await tool('upload_task_image', { task_id: task.task_id, file_path: file }));
+  assert.equal(result.task_id, task.task_id);
+  assert.deepEqual([result.image.file_name, result.image.mime_type, result.image.size_bytes], ['photo.png', 'image/png', png.length]);
+  assert.ok(!('drive_file_id' in result.image));
+  const stored = run('apiListTasks').tasks[0].images;
+  assert.equal(stored.length, 1);
+  const back = await tool('get_task_image', { image_id: stored[0].image_id, variant: 'full' });
+  assert.deepEqual(Buffer.from(back.content[0].data, 'base64'), png);
+});
+
+test('upload_task_image trusts file content, not the extension', async () => {
+  const { tool, addTask, run } = setup();
+  const task = addTask({ title: 'pic' });
+  const disguised = tempFile('notes.png', Buffer.from('just some text, not an image'));
+  assert.equal((await tool('upload_task_image', { task_id: task.task_id, file_path: disguised })).isError, true);
+  const mislabeled = tempFile('photo.txt', solidPng(8, 8, [1, 1, 1]));
+  const ok = await tool('upload_task_image', { task_id: task.task_id, file_path: mislabeled });
+  assert.equal(ok.isError, undefined);
+  assert.equal(payload(ok).image.mime_type, 'image/png');
+  assert.equal(run('apiListTasks').tasks[0].images.length, 1);
+});
+
+test('upload_task_image rejects missing files, directories, big files and bad ids', async () => {
+  const { tool, addTask } = setup();
+  const task = addTask({ title: 'pic' });
+  const good = tempFile('ok.png', solidPng(8, 8, [1, 1, 1]));
+  const big = tempFile('big.png', Buffer.concat([solidPng(8, 8, [1, 1, 1]), Buffer.alloc(8 * 1024 * 1024)]));
+  const cases = [
+    { task_id: task.task_id, file_path: path.join(os.tmpdir(), 'mcp-does-not-exist.png') },
+    { task_id: task.task_id, file_path: os.tmpdir() },
+    { task_id: task.task_id, file_path: big },
+    { task_id: 't_missing', file_path: good },
+    { task_id: task.task_id },
+    { file_path: good },
+  ];
+  for (const args of cases) {
+    const result = await tool('upload_task_image', args);
+    assert.equal(result.isError, true, JSON.stringify(args));
+  }
 });
 
 test('update_task changes only the given fields and can clear priority', async () => {
@@ -237,5 +292,5 @@ test('the stdio entry point answers JSON-RPC lines and reports parse errors', ()
   assert.equal(replies.length, 3);
   assert.equal(replies.find((r) => r.id === 1).result.serverInfo.name, 'mini-tasks');
   assert.equal(replies.find((r) => r.id === null).error.code, -32700);
-  assert.equal(replies.find((r) => r.id === 2).result.tools.length, 7);
+  assert.equal(replies.find((r) => r.id === 2).result.tools.length, 8);
 });
