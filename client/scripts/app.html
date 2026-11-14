@@ -27,7 +27,7 @@ const App = (() => {
     onDelete: (task) => confirmDelete(task),
     onStatusChange: (task, status) => moveTask(task.task_id, status, null),
     onMove: (taskId, status, beforeId) => moveTask(taskId, status, beforeId),
-    onOpenGallery: (task) => Lightbox.open(task.images.map((image) => ({ name: image.file_name, image })), 0),
+    onOpenGallery: (task) => Lightbox.open(task.images.filter(Utils.isImageFile).map((image) => ({ name: image.file_name, image })), 0),
     onSelectColumn: (status) => Store.setBoardColumn(status),
   };
 
@@ -64,7 +64,7 @@ const App = (() => {
     ConfirmDialog.open({
       title: 'ลบ “' + task.title + '” ใช่ไหม?',
       message: n
-        ? 'งานนี้และรูป ' + n + ' รูปจะถูกลบสำหรับทั้งสองคน และกู้คืนจากแอปไม่ได้'
+        ? 'งานนี้และไฟล์แนบ ' + n + ' ไฟล์จะถูกลบถาวรสำหรับทั้งสองคน กู้คืนไม่ได้ แม้จากถังขยะของ Drive'
         : 'งานนี้จะถูกลบสำหรับทั้งสองคน และกู้คืนจากแอปไม่ได้',
       confirmLabel: 'ลบงาน',
       busyLabel: 'กำลังลบ…',

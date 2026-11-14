@@ -19,7 +19,6 @@ const BoardView = (() => {
   }
 
   function card(task, handlers) {
-    const n = task.images.length;
     const el = h('article', {
       class: task.status === 'done' ? 'card is-done' : 'card',
       draggable: 'true',
@@ -27,16 +26,13 @@ const BoardView = (() => {
     },
       h('button', { type: 'button', class: 'card-title', onClick: () => handlers.onEdit(task) }, task.title),
       task.description ? h('p', { class: 'card-desc' }, task.description) : null,
+      Utils.linkChips(task, handlers.onEdit),
       h('div', { class: 'card-meta' },
         task.priority
           ? h('span', { class: 'prio', title: 'ความสำคัญ: ' + PRIORITY_LABELS[task.priority] },
             priorityIcon(task.priority), PRIORITY_LABELS[task.priority])
           : null,
-        n ? h('button', {
-          type: 'button', class: 'images-btn',
-          'aria-label': 'ดูรูป ' + n + ' รูปของ ' + task.title,
-          onClick: () => handlers.onOpenGallery(task),
-        }, icon('image'), String(n)) : null,
+        Utils.attachmentButtons(task, handlers),
         h('span', { class: 'spacer' }),
         statusSelect(task, {
           id: 'move-' + task.task_id,

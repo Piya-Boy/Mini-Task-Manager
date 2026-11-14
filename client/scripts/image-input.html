@@ -1,13 +1,15 @@
 <script>
-/** Attachment field of the task modal: existing Drive images plus local files waiting for upload. */
+/** Attachment field of the task modal: existing Drive files plus local files waiting for upload. Images get previews, other files a type tile. */
 const ImageInput = (() => {
   const zone = document.getElementById('drop-zone');
   const fileInput = document.getElementById('file-input');
   const grid = document.getElementById('image-grid');
   const errorList = document.getElementById('image-errors');
   const countEl = document.getElementById('attach-count');
-  const { h, icon, formatSize, IMAGE_LIMITS } = Utils;
+  const { h, icon, formatSize, FILE_LIMITS } = Utils;
   const EXTENSIONS = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+  fileInput.setAttribute('accept', FILE_LIMITS.extensions.map((ext) => '.' + ext).join(','));
 
   let existing = [];
   let pending = [];
@@ -24,7 +26,7 @@ const ImageInput = (() => {
   }
 
   function revokeAll() {
-    pending.forEach((p) => URL.revokeObjectURL(p.url));
+    pending.forEach((p) => { if (p.url) URL.revokeObjectURL(p.url); });
   }
 
   function reset(images) {
@@ -48,15 +50,16 @@ const ImageInput = (() => {
     let total = count();
     Array.from(fileList || []).forEach((file) => {
       const name = fileName(file);
-      if (IMAGE_LIMITS.types.indexOf(file.type) === -1) {
-        errors.push(name + ' — ไม่ใช่ไฟล์ JPG, PNG หรือ WebP');
-      } else if (file.size > IMAGE_LIMITS.maxBytes) {
+      if (FILE_LIMITS.extensions.indexOf(Utils.fileExtension(name)) === -1) {
+        errors.push(name + ' — ไม่รองรับไฟล์ชนิดนี้');
+      } else if (file.size > FILE_LIMITS.maxBytes) {
         errors.push(name + ' — ขนาด ' + formatSize(file.size) + ' เกิน 8 MB');
-      } else if (total >= IMAGE_LIMITS.maxCount) {
-        errors.push(name + ' — งานนี้มีรูปครบ ' + IMAGE_LIMITS.maxCount + ' รูปแล้ว');
+      } else if (total >= FILE_LIMITS.maxCount) {
+        errors.push(name + ' — งานนี้มีไฟล์ครบ ' + FILE_LIMITS.maxCount + ' ไฟล์แล้ว');
       } else {
         total += 1;
-        pending.push({ id: Utils.uuid(), file, name, url: URL.createObjectURL(file) });
+        const isImage = Utils.isImageName(name);
+        pending.push({ id: Utils.uuid(), file, name, isImage, url: isImage ? URL.createObjectURL(file) : null });
       }
     });
     setErrors(errors);
@@ -69,19 +72,34 @@ const ImageInput = (() => {
   }
 
   function gallery() {
-    return visible().map((e) => ({ name: e.image.file_name, image: e.image }))
-      .concat(pending.map((p) => ({ name: p.name, url: p.url })));
+    return visible().filter((e) => Utils.isImageFile(e.image)).map((e) => ({ name: e.image.file_name, image: e.image }))
+      .concat(pending.filter((p) => p.isImage).map((p) => ({ name: p.name, url: p.url })));
   }
 
-  function tile({ key, name, caption, isMissing, buildImage, onRemove, galleryIndex }) {
-    const box = h('button', {
-      type: 'button',
-      class: isMissing ? 'tile-box is-missing' : 'tile-box',
-      'aria-label': 'ดู ' + name,
-      disabled: isMissing || null,
-      onClick: () => Lightbox.open(gallery(), galleryIndex),
-    }, isMissing ? 'ไม่พบรูป' : icon('imageLg'));
-    if (!isMissing) buildImage(box);
+  function fileBox(name, href) {
+    const ext = Utils.fileExtension(name).toUpperCase();
+    const content = [icon('fileLg'), h('span', { class: 'tile-ext' }, ext)];
+    if (!href) return h('div', { class: 'tile-box tile-file', 'aria-hidden': 'true' }, content);
+    return h('a', {
+      class: 'tile-box tile-file is-link', href, target: '_blank', rel: 'noopener noreferrer',
+      'aria-label': 'เปิด ' + name, title: 'เปิด ' + name,
+    }, content);
+  }
+
+  function tile({ key, name, caption, isMissing, buildImage, onRemove, galleryIndex, fileHref, isFile }) {
+    let box;
+    if (isFile) {
+      box = fileBox(name, fileHref);
+    } else {
+      box = h('button', {
+        type: 'button',
+        class: isMissing ? 'tile-box is-missing' : 'tile-box',
+        'aria-label': 'ดู ' + name,
+        disabled: isMissing || null,
+        onClick: () => Lightbox.open(gallery(), galleryIndex),
+      }, isMissing ? 'ไม่พบรูป' : icon('imageLg'));
+      if (!isMissing) buildImage(box);
+    }
 
     return h('li', { class: 'tile', dataset: { key } },
       box,
@@ -95,19 +113,34 @@ const ImageInput = (() => {
 
   function render() {
     const total = count();
-    countEl.textContent = total + ' / ' + IMAGE_LIMITS.maxCount;
-    fileInput.disabled = disabled || total >= IMAGE_LIMITS.maxCount;
+    countEl.textContent = total + ' / ' + FILE_LIMITS.maxCount;
+    fileInput.disabled = disabled || total >= FILE_LIMITS.maxCount;
 
     const tiles = [];
-    visible().forEach((entry, i) => {
+    let galleryIndex = 0;
+    visible().forEach((entry) => {
       const image = entry.image;
+      if (!Utils.isImageFile(image)) {
+        tiles.push(tile({
+          key: image.image_id,
+          name: image.file_name,
+          caption: 'อัปโหลดแล้ว · ' + formatSize(image.size_bytes),
+          isFile: true,
+          fileHref: Utils.driveViewUrl(image),
+          onRemove: () => {
+            entry.removed = true;
+            render();
+          },
+        }));
+        return;
+      }
       const isMissing = missing.has(image.image_id);
       tiles.push(tile({
         key: image.image_id,
         name: image.file_name,
         caption: isMissing ? 'ไม่พบใน Drive' : 'อัปโหลดแล้ว',
         isMissing,
-        galleryIndex: i,
+        galleryIndex: galleryIndex++,
         buildImage: (box) => {
           const img = h('img', { alt: '' });
           img.addEventListener('load', () => box.replaceChildren(img), { once: true });
@@ -124,17 +157,17 @@ const ImageInput = (() => {
         },
       }));
     });
-    const offset = visible().length;
-    pending.forEach((item, i) => {
+    pending.forEach((item) => {
       tiles.push(tile({
         key: item.id,
         name: item.name,
         caption: 'ยังไม่อัปโหลด · ' + formatSize(item.file.size),
         isMissing: false,
-        galleryIndex: offset + i,
+        isFile: !item.isImage,
+        galleryIndex: item.isImage ? galleryIndex++ : -1,
         buildImage: (box) => box.replaceChildren(h('img', { src: item.url, alt: '' })),
         onRemove: () => {
-          URL.revokeObjectURL(item.url);
+          if (item.url) URL.revokeObjectURL(item.url);
           pending = pending.filter((p) => p !== item);
           render();
         },
@@ -152,7 +185,7 @@ const ImageInput = (() => {
   function markUploaded(pendingId, image) {
     const item = pending.find((p) => p.id === pendingId);
     if (!item) return;
-    URL.revokeObjectURL(item.url);
+    if (item.url) URL.revokeObjectURL(item.url);
     pending = pending.filter((p) => p !== item);
     existing.push({ image, removed: false });
     render();

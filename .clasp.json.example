@@ -7,6 +7,7 @@
     "server/Validation.gs",
     "server/Database.gs",
     "server/ImageService.gs",
+    "server/LinkService.gs",
     "server/TaskService.gs",
     "server/Code.gs",
     "server/HttpApi.gs"

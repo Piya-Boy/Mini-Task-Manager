@@ -4,13 +4,21 @@ const Utils = (() => {
   const STATUS_ORDER = ['todo', 'in_progress', 'done'];
   const PRIORITY_LABELS = { low: 'ต่ำ', medium: 'ปานกลาง', high: 'สูง' };
   const PRIORITY_LEVEL = { low: 1, medium: 2, high: 3 };
-  const IMAGE_LIMITS = {
+  const FILE_LIMITS = {
     maxCount: 10,
     maxBytes: 8 * 1024 * 1024,
-    types: ['image/jpeg', 'image/png', 'image/webp'],
+    extensions: ['jpg', 'jpeg', 'png', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'md', 'zip'],
   };
+  const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
+
+  const LINK_LIMITS = { maxCount: 10, maxUrl: 2000 };
+  const LINK_PATTERN = /^https?:\/\/[^\s\/?#]+\S*$/i;
+  const LINK_CHIPS_SHOWN = 2;
 
   const ICONS = {
+    paperclip: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12.5 7.5l-4.6 4.6a2.5 2.5 0 01-3.5-3.5l5-5a1.7 1.7 0 012.4 2.4l-5 5a.8.8 0 01-1.2-1.2l4.4-4.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    fileLg: '<svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true"><path d="M4 1.75h5l3 3v9.5H4z" stroke-linejoin="round"/><path d="M9 1.75v3h3" stroke-linejoin="round"/></svg>',
+    link: '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6.5 9.5l3-3M7 4.5l1-1a2.5 2.5 0 013.5 3.5l-1 1M9 11.5l-1 1A2.5 2.5 0 014.5 9l1-1" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     image: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1"/><path d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5 2.5 2.5" stroke-linejoin="round"/></svg>',
     imageLg: '<svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" aria-hidden="true"><rect x="2.5" y="3" width="11" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1"/><path d="M3 12l3.5-3.5 2.5 2.5 1.5-1.5 2.5 2.5" stroke-linejoin="round"/></svg>',
     pencil: '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M10.5 3.5l2 2L6 12H4v-2z" stroke-linejoin="round"/></svg>',
@@ -70,6 +78,85 @@ const Utils = (() => {
       icon('chevron'));
   }
 
+  function fileExtension(name) {
+    const dot = String(name || '').lastIndexOf('.');
+    return dot === -1 ? '' : name.slice(dot + 1).toLowerCase();
+  }
+
+  /** True for an attachment the server stored as an image. */
+  function isImageFile(file) {
+    return typeof file.mime_type === 'string' && file.mime_type.indexOf('image/') === 0;
+  }
+
+  function isImageName(name) {
+    return IMAGE_EXTENSIONS.indexOf(fileExtension(name)) !== -1;
+  }
+
+  /** Where a non-image attachment opens. Files are shared by link, so Drive can show them directly. */
+  function driveViewUrl(file) {
+    return 'https://drive.google.com/file/d/' + encodeURIComponent(file.drive_file_id) + '/view';
+  }
+
+  /** Count buttons for a task's attachments: images open the gallery, other files open the editor. */
+  function attachmentButtons(task, handlers) {
+    const images = task.images.filter(isImageFile).length;
+    const files = task.images.length - images;
+    return [
+      images ? h('button', {
+        type: 'button', class: 'images-btn',
+        'aria-label': 'ดูรูป ' + images + ' รูปของ ' + task.title,
+        onClick: () => handlers.onOpenGallery(task),
+      }, icon('image'), String(images)) : null,
+      files ? h('button', {
+        type: 'button', class: 'images-btn',
+        'aria-label': 'ดูไฟล์แนบ ' + files + ' ไฟล์ของ ' + task.title,
+        onClick: () => handlers.onEdit(task),
+      }, icon('paperclip'), String(files)) : null,
+    ];
+  }
+
+  function linksOf(task) {
+    return task.links || [];
+  }
+
+  /** Returns the URL when it is a plain http(s) address, otherwise null. Never use an unchecked URL as an href. */
+  function safeUrl(url) {
+    return typeof url === 'string' && LINK_PATTERN.test(url) ? url : null;
+  }
+
+  /** '' for blank input, a full http(s) URL (https:// is added when no scheme is typed), or null when invalid. */
+  function normalizeUrl(text) {
+    let value = String(text || '').trim();
+    if (!value) return '';
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(value)) value = 'https://' + value;
+    return value.length <= LINK_LIMITS.maxUrl && safeUrl(value) ? value : null;
+  }
+
+  function linkText(link) {
+    try {
+      return new URL(link.url).hostname.replace(/^www\./, '') || link.url;
+    } catch (error) {
+      return link.url;
+    }
+  }
+
+  /** Clickable link chips for a task, or null. The "+N" button opens the editor for the rest. */
+  function linkChips(task, onMore) {
+    const links = linksOf(task).filter((link) => safeUrl(link.url));
+    if (!links.length) return null;
+    const rest = links.length - LINK_CHIPS_SHOWN;
+    return h('div', { class: 'link-chips' },
+      links.slice(0, LINK_CHIPS_SHOWN).map((link) => h('a', {
+        class: 'link-chip', href: link.url, target: '_blank', rel: 'noopener noreferrer',
+        title: link.url, draggable: 'false',
+      }, icon('link'), h('span', { class: 'link-chip-text' }, linkText(link)))),
+      rest > 0 ? h('button', {
+        type: 'button', class: 'link-chip link-more',
+        'aria-label': 'ดูลิงก์อีก ' + rest + ' ลิงก์ของ ' + task.title,
+        onClick: () => onMore(task),
+      }, '+' + rest) : null);
+  }
+
   function formatSize(bytes) {
     if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
     return Math.max(1, Math.round(bytes / 1024)) + ' KB';
@@ -106,8 +193,8 @@ const Utils = (() => {
   }
 
   return {
-    STATUS_LABELS, STATUS_ORDER, PRIORITY_LABELS, IMAGE_LIMITS,
-    icon, priorityIcon, h, statusSelect, formatSize, debounce, uuid, readFileAsBase64, storageGet, storageSet,
+    STATUS_LABELS, STATUS_ORDER, PRIORITY_LABELS, FILE_LIMITS, LINK_LIMITS,
+    icon, priorityIcon, h, statusSelect, fileExtension, isImageFile, isImageName, driveViewUrl, attachmentButtons, linksOf, safeUrl, normalizeUrl, linkText, linkChips, formatSize, debounce, uuid, readFileAsBase64, storageGet, storageSet,
   };
 })();
 </script>

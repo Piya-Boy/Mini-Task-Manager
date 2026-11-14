@@ -12,7 +12,7 @@ const vm = require('node:vm');
 const crypto = require('node:crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-const PUSH_ORDER = ['Config', 'Utils', 'Validation', 'Database', 'ImageService', 'TaskService', 'Code', 'HttpApi'];
+const PUSH_ORDER = ['Config', 'Utils', 'Validation', 'Database', 'ImageService', 'LinkService', 'TaskService', 'Code', 'HttpApi'];
 
 class FakeRange {
   constructor(sheet, row, col, numRows, numCols) {
@@ -140,6 +140,15 @@ function createServices() {
     return file;
   }
 
+  const Drive = {
+    Files: {
+      remove(id) {
+        if (!files.has(id)) throw new Error('API call to drive.files.delete failed with error: File not found: ' + id);
+        files.delete(id);
+      },
+    },
+  };
+
   const DriveApp = {
     Access: { ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' },
     Permission: { VIEW: 'VIEW' },
@@ -208,7 +217,7 @@ function createServices() {
   };
 
   return {
-    globals: { SpreadsheetApp, DriveApp, Utilities, LockService, CacheService, PropertiesService, ContentService },
+    globals: { SpreadsheetApp, DriveApp, Drive, Utilities, LockService, CacheService, PropertiesService, ContentService },
     state: { spreadsheets, folders, files, properties, cache, lockState },
   };
 }
